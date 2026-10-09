@@ -59,7 +59,11 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
         await ws.close(code=4429)
         return
     connections.add(session_id)
-    await ws.accept()
+    try:
+        await ws.accept()
+    except BaseException:
+        connections.discard(session_id)
+        raise
     active = None
     active_cancel = None
     pending = None
@@ -213,14 +217,48 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
         pass
     finally:
         closed = True
+        # Release ownership before an awaited cleanup can itself be cancelled.
+        connections.discard(session_id)
         if active_cancel:
             active_cancel.set()
-        with contextlib.suppress(HTTPException):
-            await asyncio.to_thread(advance_generation, session_id)
-        if active:
-            active.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await active
-        connections.discard(session_id)
-        with contextlib.suppress(RuntimeError, WebSocketDisconnect):
-            await ws.close()
+        task = active
+        if task:
+            task.cancel()
+        try:
+            with contextlib.suppress(HTTPException):
+                await asyncio.to_thread(advance_generation, session_id)
+        finally:
+            if task:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                await ws.close()
+
+
+# Warm-up is serialized and uses only generated silence/fixed application text.
+from threading import Lock
+from typing import Literal
+from pydantic import BaseModel
+warm_lock = Lock()
+
+class WarmRequest(BaseModel):
+    language: Literal['en-IN','hi-IN','te-IN'] = 'en-IN'
+
+@router.post('/warm')
+async def warm_models(body: WarmRequest):
+    from .telephony import active, prepare
+    import httpx
+    if connections or active:
+        raise HTTPException(409, 'Finish the active voice session before warming models')
+    if not warm_lock.acquire(blocking=False):
+        raise HTTPException(429, 'Models are already warming')
+    started = time.perf_counter()
+    try:
+        if not engine.status(body.language)['ready']:
+            raise HTTPException(503, 'Install matching local speech assets first')
+        await prepare(body.language)
+        return {'ready':True,'warmup_ms':round((time.perf_counter()-started)*1000),'audio_recordings_stored':False}
+    except (ProviderUnavailable,httpx.HTTPError,ValueError) as exc:
+        raise HTTPException(503, 'Local warm-up failed. Check model availability and available memory.') from exc
+    finally:
+        warm_lock.release()

@@ -22,7 +22,7 @@ another terminal. The explicit download command fetches English Whisper base.en 
 Piper en_US-ljspeech-high assets into gitignored `backend/models`. Downloads need
 internet, disk space and bandwidth; inference makes no speech-service API requests.
 Do not commit models, credentials, databases or audio. Linux uses the same Python
-commands with its virtual environment activated. Windows execution is not yet tested.
+commands with its virtual environment activated. See the current Windows synthetic runtime results and physical-device limitations in [multilingual evaluation](MULTILINGUAL.md).
 
 In **AI conversation lab**, select a fictional or consenting test lead, confirm the
 session collection permission, and start a session. Confirm the separate microphone
@@ -40,7 +40,7 @@ suppression even if speech generation fails; the closing message is shown as tex
 ## Timing and interruption limits
 
 - AudioWorklet sends 20 ms mono 16 kHz PCM16 frames. Energy detection needs three
-  voiced frames (60 ms), endpoints after 600 ms silence, and caps utterances at 15 s.
+  voiced frames (60 ms), endpoints after 600 ms silence by default (configurable 300–1000 ms), and caps utterances at 15 s.
 - Detection can react to background noise or speaker echo. Browser echo cancellation
   is requested but not established as effective. Use headphones. Human speech,
   accents, noisy rooms and overlapping speakers still need evaluation.
@@ -59,9 +59,8 @@ suppression even if speech generation fails; the closing message is shown as tex
 
 ## Languages, licenses and API
 
-English speech alone was exercised. Hindi/Telugu require a multilingual Whisper
-model, `STT_MODEL_PATH`, `STT_LANGUAGES=en,hi,te` and matching
-`PIPER_VOICE_HI_PATH` / `PIPER_VOICE_TE_PATH` ONNX assets plus companion `.json` files.
+English speech has the existing synthetic smoke coverage. New multilingual software evaluation is documented in [MULTILINGUAL.md](MULTILINGUAL.md); Hindi/Telugu accuracy is not accepted. Hindi/Telugu require a multilingual Whisper
+model, `STT_MODEL_PATH`, `STT_LANGUAGES=en,hi,te` and configured speech generation: `TTS_BACKEND_HI=espeak` for the robotic Hindi fallback, or a separately licensed Hindi Piper voice, plus `PIPER_VOICE_TE_PATH` for the selected Telugu voice.
 Suitable commercially usable voices, pronunciation and accuracy must be assessed
 separately; toggling a language does not install or verify a voice. English Piper
 uses an American voice, not a validated Indian accent.

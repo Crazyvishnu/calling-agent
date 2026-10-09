@@ -1,0 +1,63 @@
+name: Windows speech validation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backend/speech_engine.py'
+      - 'scripts/setup_speech.py'
+      - 'scripts/evaluate_speech.py'
+      - 'scripts/windows/**'
+      - '.github/workflows/windows-speech.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-speech:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      STT_MODEL_PATH: backend/models/whisper-small
+      STT_LANGUAGES: en,hi,te
+      STT_DEVICE: cpu
+      STT_COMPUTE_TYPE: int8
+      TTS_BACKEND_HI: espeak
+      PIPER_VOICE_TE_PATH: backend/models/te_IN-padmavathi-medium.onnx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements-speech.txt
+      - uses: actions/cache@v4
+        with:
+          path: backend/models
+          key: akki-windows-speech-small-te-v1
+      - run: python -m scripts.setup_speech --download --languages en hi te --stt-model small
+      - name: Install the official eSpeak NG Windows runtime
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'espeak-ng.msi'
+          Invoke-WebRequest 'https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi' -OutFile $installer
+          $process = Start-Process msiexec.exe -ArgumentList @('/i', "`"$installer`"", '/qn', '/norestart') -Wait -PassThru
+          if ($process.ExitCode -notin @(0,3010)) { throw "eSpeak installation failed: $($process.ExitCode)" }
+          $candidates = @("${env:ProgramFiles}\eSpeak NG\espeak-ng.exe", "${env:ProgramFiles(x86)}\eSpeak NG\espeak-ng.exe")
+          $executable = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $executable) { throw 'eSpeak NG executable not found' }
+          "ESPEAK_EXECUTABLE=$executable" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Parse Windows setup scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem scripts/windows/*.ps1 | ForEach-Object {
+            $tokens = $null; $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors) { throw ($errors | Out-String) }
+          }
+      - name: Exercise actual local synthesis and recognition
+        run: python -m scripts.evaluate_speech --output speech-evaluation/windows-synthetic.json
+      - name: Publish synthetic metrics (not human recordings)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-synthetic-speech
+          path: speech-evaluation/windows-synthetic.json
+          if-no-files-found: warn

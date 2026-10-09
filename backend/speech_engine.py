@@ -3,14 +3,17 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 from threading import Lock
 import wave
 
 from .ai import ProviderUnavailable
+from .language import DECLINE, HANDOFF
 
 # Cache only generic application prompts, never customer-derived replies.
-STATIC_PROMPTS = frozenset({
+STATIC_PROMPTS = frozenset({*DECLINE.values(), *HANDOFF.values(),
     "Hello, I'm Akki, an AI assistant for a website service. You agreed to this private test and local transcript storage. What website do you need?",
     'Understood. I have ended this conversation and disabled further outreach. Thank you.',
     'I have noted your request for a person. The developer can review your details for a personal follow-up. Thank you.',
@@ -22,7 +25,9 @@ MODEL_ROOT = Path(__file__).parent / 'models'
 class LocalSpeechEngine:
     def __init__(self):
         self.stt_path = Path(os.environ.get('STT_MODEL_PATH', str(MODEL_ROOT / 'whisper-base.en')))
-        self.stt_languages = os.environ.get('STT_LANGUAGES', 'en').split(',')
+        self.stt_languages = [x.strip() for x in os.environ.get('STT_LANGUAGES', 'en').split(',')]
+        self.stt_device = os.environ.get('STT_DEVICE', 'cpu')
+        self.stt_compute_type = os.environ.get('STT_COMPUTE_TYPE', 'int8')
         self._recognizer = None
         self._voices = {}
         self._static_audio = {}
@@ -33,6 +38,12 @@ class LocalSpeechEngine:
         setting = os.environ.get('PIPER_VOICE_' + prefix.upper() + '_PATH')
         return Path(setting) if setting else (MODEL_ROOT / 'en_US-ljspeech-high.onnx' if prefix == 'en' else None)
 
+    def tts_backend(self, language):
+        return os.environ.get('TTS_BACKEND_' + language.split('-')[0].upper(), 'piper')
+
+    def espeak_program(self):
+        return shutil.which(os.environ.get('ESPEAK_EXECUTABLE', 'espeak-ng'))
+
     def status(self, language='en-IN'):
         prefix = language.split('-')[0]
         path = self.voice_path(language)
@@ -40,13 +51,22 @@ class LocalSpeechEngine:
         tts = importlib.util.find_spec('piper') is not None and path is not None and path.is_file() and Path(str(path) + '.json').is_file()
         if tts:
             try:
-                config = json.loads(Path(str(path) + '.json').read_text())
+                config = json.loads(Path(str(path) + '.json').read_text(encoding='utf-8'))
                 tts = config['language']['code'].split('_')[0] == prefix
             except (OSError, ValueError, KeyError, TypeError):
                 tts = False
-        return {'stt_ready': stt, 'tts_ready': tts, 'ready': stt and tts,
+        backend = self.tts_backend(language)
+        if backend == 'espeak':
+            tts = prefix in ('en','hi','te') and self.espeak_program() is not None
+        elif backend != 'piper':
+            tts = False
+        return {'tts_backend': backend, 'voice_quality': 'robotic fallback' if backend == 'espeak' else 'neural voice; human quality unverified',
+                'stt_device': self.stt_device, 'human_validated': False,
+                'language_acceptance': 'human validation pending' if prefix=='en' else 'experimental; recognition acceptance failed on current synthetic samples',
+                'endpoint_silence_ms': max(300,min(1000,int(os.environ.get('AKKI_ENDPOINT_SILENCE_MS','600'))//20*20)),
+                'stt_ready': stt, 'tts_ready': tts, 'ready': stt and tts,
                 'language': language, 'audio_recordings_stored': False,
-                'detail': 'Local speech assets available' if stt and tts else 'Install optional speech dependencies/models; this language needs matching local STT and Piper assets.'}
+                'detail': 'Local speech assets available' if stt and tts else 'Install matching local STT and configured TTS assets; readiness is not an accuracy or quality certificate.'}
 
     def transcribe(self, pcm: bytes, language: str) -> str:
         if not self.status(language)['stt_ready']:
@@ -58,7 +78,7 @@ class LocalSpeechEngine:
             from faster_whisper import WhisperModel
             with self._stt_lock:
                 if self._recognizer is None:
-                    self._recognizer = WhisperModel(str(self.stt_path), device='cpu', compute_type='int8',
+                    self._recognizer = WhisperModel(str(self.stt_path), device=self.stt_device, compute_type=self.stt_compute_type,
                                                     cpu_threads=2, num_workers=1, local_files_only=True)
                 if language.split('-')[0] != 'en' and not self._recognizer.model.is_multilingual:
                     raise ProviderUnavailable('This STT model is English-only; install a multilingual model for this language.')
@@ -74,9 +94,20 @@ class LocalSpeechEngine:
 
     def synthesize(self, text: str, language: str) -> bytes:
         if not self.status(language)['tts_ready']:
-            raise ProviderUnavailable('Local Piper speech generation is unavailable for this language.')
+            raise ProviderUnavailable('Local speech generation is unavailable for this language.')
         if not text.strip() or len(text) > 2000:
             raise ValueError('Speech text must contain 1–2000 characters.')
+        if self.tts_backend(language) == 'espeak':
+            try:
+                args = [self.espeak_program(), '--stdout', '--stdin', '-v', language.split('-')[0], '-s', '155']
+                # Text is stdin data, never a shell command. No files or audio devices used.
+                result = subprocess.run(args, input=text.encode('utf-8'), stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, timeout=30, check=True)
+                if not result.stdout.startswith(b'RIFF') or len(result.stdout) > 8_000_000:
+                    raise ValueError('Invalid or oversized synthesized audio')
+                return result.stdout
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                raise ProviderUnavailable('Local eSpeak NG synthesis failed; check the executable and voice data.') from exc
         try:
             from piper import PiperVoice
             from piper.config import PiperConfig
@@ -91,7 +122,7 @@ class LocalSpeechEngine:
                     options.intra_op_num_threads = 2
                     options.inter_op_num_threads = 1
                     self._voices[language] = PiperVoice(
-                        config=PiperConfig.from_dict(json.loads(Path(str(path) + '.json').read_text())),
+                        config=PiperConfig.from_dict(json.loads(Path(str(path) + '.json').read_text(encoding='utf-8'))),
                         session=onnxruntime.InferenceSession(str(path), sess_options=options,
                                                             providers=['CPUExecutionProvider']),
                     )

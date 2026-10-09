@@ -94,6 +94,8 @@ class VoiceSocketTests(unittest.TestCase):
     def tearDown(self):
         self.provider.release.set()
         self.client.__exit__(None, None, None)
+        from backend.speech import connections
+        self.assertNotIn(self.session['id'], connections, 'Socket cancellation must release voice ownership')
         app.dependency_overrides.clear(); self.mock.stop()
         db.DB_PATH = self.previous_db; self.temp.cleanup()
 

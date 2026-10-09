@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from './api';
+import GooglePlaces from './GooglePlaces';
 
 export default function Discovery({ onRefresh }) {
   const [config,setConfig]=useState(null),[location,setLocation]=useState('Hyderabad');
@@ -26,10 +27,10 @@ export default function Discovery({ onRefresh }) {
   }
   const visible=result?.results.filter(item=>filter==='all'||item.website_signal==='not_listed')||[];
   function toggle(key){setSelected(old=>old.includes(key)?old.filter(k=>k!==key):old.length<20?[...old,key]:old);setReviewed(false);}
-  return <section className="panel lab-panel discovery-panel">
+  return <><GooglePlaces/><section className="panel lab-panel discovery-panel">
     <h2>Find business prospects</h2>
     <p className="discovery-intro">Search public OpenStreetMap listings around a location. Review website opportunities, then import selected prospects into your CRM.</p>
-    <p className="notice">OpenStreetMap is the connected source. Google Maps is not connected. A public listing or phone number does not grant permission to call.</p>
+    <p className="notice">OpenStreetMap is the connected source. Optional Google Places research is configured separately above. A public listing or phone number does not grant permission to call.</p>
     <form onSubmit={search} className="discovery-form">
       <label>Nearby area <select disabled={busy} defaultValue="Hyderabad" onChange={e=>{const area=config?.locations.find(a=>a.name===e.target.value);if(area){setLocation(area.name);setLatitude(String(area.latitude));setLongitude(String(area.longitude));}}}>
         {(config?.locations||[{name:'Hyderabad'}]).map(area=><option key={area.name}>{area.name}</option>)}<option>Custom coordinates</option>
@@ -64,5 +65,5 @@ export default function Discovery({ onRefresh }) {
       </div>
     </>}
     <p className="discovery-attribution"><a href={config?.license_url||'https://www.openstreetmap.org/copyright'} target="_blank" rel="noopener noreferrer">{config?.attribution||'© OpenStreetMap contributors · ODbL 1.0'}</a></p>
-  </section>;
+  </section></>;
 }

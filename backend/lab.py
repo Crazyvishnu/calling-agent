@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from .ai import ConversationProvider, InvalidModelResponse, OllamaProvider, ProviderUnavailable
 from .conversation import decline_changes
 from .db import connect
+from .language import DECLINE, HANDOFF
 
 router = APIRouter(prefix='/api/lab', tags=['Local AI lab'])
 LANGUAGES = {
@@ -120,10 +121,10 @@ def generate_turn(snapshot, messages, draft, body, provider):
     state = 'active'
     if changes:
         # Opt-out is processed without waiting for a model, even if Ollama is offline.
-        answer = 'Understood. I have ended this conversation and disabled further outreach. Thank you.'
+        answer = DECLINE[snapshot['language']]
         state, interest = 'declined', 'not_interested'
     elif human_requested(body.message):
-        answer = 'I have noted your request for a person. The developer can review your details for a personal follow-up. Thank you.'
+        answer = HANDOFF[snapshot['language']]
         state = 'completed'
     else:
         try:
@@ -141,7 +142,7 @@ def generate_turn(snapshot, messages, draft, body, provider):
             if turn.opt_out:
                 changes['do_not_call'] = True
             state, interest = 'declined', 'not_interested'
-            answer = 'Understood. I have ended this conversation and disabled further outreach. Thank you.'
+            answer = DECLINE[snapshot['language']]
         elif turn.finished or body.revision + 1 >= MAX_TURNS:
             state = 'completed'
     return {'answer': answer, 'draft': draft, 'interest': interest, 'state': state, 'changes': changes}

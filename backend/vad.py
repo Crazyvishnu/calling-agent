@@ -1,6 +1,7 @@
 """Energy VAD for 20ms PCM16 frames; explicit prototype limits, no cloud dependency."""
 from collections import deque
 import math
+import os
 import struct
 
 FRAME_BYTES = 640  # mono 16kHz, signed little-endian 16-bit, 20ms
@@ -8,6 +9,7 @@ FRAME_BYTES = 640  # mono 16kHz, signed little-endian 16-bit, 20ms
 
 class EnergyVAD:
     def __init__(self, threshold=0.015):
+        self.endpoint_frames = max(15, min(50, int(os.environ.get('AKKI_ENDPOINT_SILENCE_MS','600')) // 20))
         self.threshold = threshold
         self.reset()
 
@@ -34,7 +36,7 @@ class EnergyVAD:
         else:
             self.buffer.append(frame)
             self.silence = 0 if voiced else self.silence + 1
-            if self.silence >= 30 or len(self.buffer) >= 750:
+            if self.silence >= self.endpoint_frames or len(self.buffer) >= 750:
                 # Trim endpoint silence and refuse very short noise bursts.
                 frames = self.buffer[:-self.silence] if self.silence else self.buffer
                 if len(frames) >= 12:

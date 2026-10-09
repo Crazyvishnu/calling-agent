@@ -66,6 +66,6 @@ def readiness():
             'private_sip_enabled': os.environ.get('AKKI_SIP_LAB') == '1',
             'pstn_connected': False, 'automatic_retries': False,
             'production_ready': False, 'access_roles': ['owner','operator','viewer'],
-            'remaining_checks': ['Human speech and latency acceptance', 'Hindi/Telugu voice models and testing',
-                                 'Windows voice and WSL2 SIP testing', 'Always-on host, TLS and restore drills',
+            'remaining_checks': ['Human speech and latency acceptance', 'Hindi/Telugu recognition accuracy and native-speaker acceptance',
+                                 'Physical Windows microphone/GPU and WSL2 SIP testing', 'Always-on host, TLS and restore drills',
                                  'Licensed PSTN access and commercial calling authorization', 'Account lifecycle and stronger production authentication']}

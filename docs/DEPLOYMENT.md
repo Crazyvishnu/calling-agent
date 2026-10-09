@@ -26,7 +26,7 @@ Open `http://localhost:8000`, enter the private key and create a fictional lead 
 
 The Docker image and same-origin browser flow have been tested on Linux. Docker Desktop/WSL2 and Windows speech/PBX have not been tested. The Windows CI job checks the portable core and frontend build; verify its result at the published commit. The existing native Windows Python/React setup remains documented in the README; speech/telephony compatibility is unverified.
 
-For remote operation, choose a machine that can stay on, protect it with a VPN or HTTPS reverse proxy, add your exact origin to `AKKI_ALLOWED_ORIGINS`, and set `AKKI_SECURE_COOKIES=1`. The supplied Compose file deliberately binds to loopback. No cloud deployment, public domain, certificate or always-on host is provisioned here. Hosting and electricity can incur costs. Laptop-hosted services stop when the laptop is off.
+For remote operation, choose a machine that can stay on, protect it with a VPN or HTTPS reverse proxy, add your exact origin to `AKKI_ALLOWED_ORIGINS`, and set `AKKI_SECURE_COOKIES=1`. The supplied Compose file deliberately binds to loopback. No cloud deployment, public domain or always-on host is provisioned here. The optional local HTTPS overlay generates a private certificate. Hosting and electricity can incur costs. Laptop-hosted services stop when the laptop is off.
 
 ## Local AI and PBX
 
@@ -34,7 +34,7 @@ Use [local model setup](LOCAL_AI.md), [speech setup](LOCAL_SPEECH.md), and [priv
 
 ## GitHub checks
 
-GitHub Actions runs the backend test suite, frontend production build and application-container smoke test. Optional model downloads and real telephony are excluded from CI. The tests use fictional records and mocks; they do not call businesses. All contact databases, runtime credentials, model weights and audio files are ignored by Git.
+GitHub Actions runs the backend test suite, frontend production build and application-container smoke test. A separate Windows speech workflow downloads optional assets and exercises synthetic local STT/TTS. Real telephony and human audio remain excluded from CI. The tests use fictional records and mocks; they do not call businesses. All contact databases, runtime credentials, model weights and audio files are ignored by Git.
 
 ## Remaining production gates
 
@@ -45,6 +45,10 @@ GitHub Actions runs the backend test suite, frontend production build and applic
 - Commercial telecom eligibility, current India-specific consent/promotional requirements and recording/privacy policy review.
 - Authenticated hosting with HTTPS, persistent backups, monitoring and operating-cost approval.
 - Account lifecycle/MFA, tamper-resistant audit logging, backup retention/erasure operations and security review.
-- Google Places integration only after its terms, retention restrictions and billing are approved. OpenStreetMap discovery is available now.
+- Live Google Places verification requires API access and explicit terms/billing approval. The IDs-only adapter is implemented but disabled; OpenStreetMap discovery is available now.
 
 The software is a tested self-hosted prototype, not a completed commercial telephone service.
+
+## Private HTTPS overlay
+
+Run `docker compose -f deploy/compose.yaml -f deploy/https.compose.yaml up --build -d` with the existing private owner key set. Caddy serves `https://localhost:8443`, uses an internal CA, and sets Secure cookies through the app configuration. Trust only your own generated CA; never disable certificate verification. This is private localhost TLS, not public internet hosting or an ACME-issued certificate. The base app image contains CRM/API, not the full model/PBX stack. For the 8 GB Windows machine prefer [native setup](WINDOWS_3050.md).

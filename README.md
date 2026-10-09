@@ -130,3 +130,11 @@ not fast/reliable enough for live calling yet. Optional model and telephony test
 ### Privacy controls
 
 The **Follow-ups & reports** screen now includes private business-record export, explicitly confirmed application-data erasure and deployment readiness checks. Erasure preserves hashed phone suppression and a minimal independent call-attempt ledger, so deleting transcripts cannot reset outreach quotas. Active calls/microphones must be stopped first. Existing backups and exports require separate removal. See [operations and privacy setup](docs/OPERATIONS.md).
+
+### Windows 11 / RTX 3050 setup and remaining integrations
+
+For the owner's **8 GB RAM / RTX 3050 4 GB** PC, use [Windows setup](docs/WINDOWS_3050.md). It provides native setup/start/diagnostic scripts, one-model memory limits, microphone warm-up and private localhost HTTPS through Caddy. The PC must stay on; no always-on cloud host has been provisioned.
+
+[Multilingual speech evaluation](docs/MULTILINGUAL.md) includes actual local English/Hindi/Telugu synthesis-recognition runs, a consent-gated human WAV evaluator, and Windows synthetic speech CI. Hindi is currently a robotic eSpeak fallback. Hindi/Telugu accuracy failed the current synthetic acceptance fixtures; they remain experimental. No human speech samples or physical RTX measurements were available.
+
+[Optional Google Places](docs/GOOGLE_PLACES.md) is implemented as disabled-by-default, quota-controlled IDs-only research links. Live Google access requires the owner's API/billing/terms setup. [Telephone connectivity](docs/TELEPHONE_CONNECTIVITY.md) explains the provider details and explicit cost approval required before a real Indian PSTN adapter can be completed. No paid service or PSTN route is enabled by these changes.

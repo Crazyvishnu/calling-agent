@@ -41,6 +41,10 @@ export default function VoicePanel({ session, enabled, onSession, onActivity }) 
     const r = { playEpoch: 0, ready: false, generation: 0 };
     resources.current = r; setError(''); setActive(true); setState('connecting'); callbacks.current.onActivity(true);
     try {
+      setState('warming local models');
+      await api('/speech/warm', 'POST', { language: session.language });
+      if (epoch.current !== token) return;
+      setState('connecting');
       if (!navigator.mediaDevices?.getUserMedia) throw Error('Local microphone capture requires localhost or HTTPS and a compatible browser.');
       r.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (epoch.current !== token) { r.stream.getTracks().forEach(t => t.stop()); return; }
@@ -97,6 +101,7 @@ export default function VoicePanel({ session, enabled, onSession, onActivity }) 
   return <div className="local-voice-panel">
     <h3>Local microphone conversation</h3>
     <p>{status?.detail || 'Checking local speech assets…'} · Language: {session.language}</p>
+    <p>{status?.voice_quality} · {status?.language_acceptance}</p>
     <label className="check-label"><input type="checkbox" disabled={active} checked={permission} onChange={e => setPermission(e.target.checked)} />I agree to process this microphone audio locally and save the recognized text. Raw audio is not recorded.</label>
     <div className="lab-controls">
       <button className="primary" disabled={!enabled || !status?.ready || !permission || active || session.state !== 'active'} onClick={start}>Start local microphone</button>
@@ -108,6 +113,6 @@ export default function VoicePanel({ session, enabled, onSession, onActivity }) 
     {heard && <p>Recognized: {heard}</p>}
     {timings && <p>STT {timings.stt_ms} ms · Model {timings.llm_ms} ms · TTS {timings.tts_ms} ms · Total {timings.total_ms} ms</p>}
     {error && <p className="error" role="alert">{error}</p>}
-    <p>Use headphones. Detected speech stops the current reply; silence for 600 ms submits your turn. Maximum utterance: 15 seconds. Speech detection is an energy-based prototype and can react to noise or speaker echo.</p>
+    <p>Use headphones. Detected speech stops the current reply; silence for {status?.endpoint_silence_ms || 600} ms submits your turn. Maximum utterance: 15 seconds. Speech detection is an energy-based prototype and can react to noise or speaker echo.</p>
   </div>;
 }

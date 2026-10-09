@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+from .google_places import router as google_router, initialize_google
 from .privacy import router as privacy_router
 from .security import AccessMiddleware, router as auth_router, credentials, require_owner
 from .operations import router as operations_router, initialize_operations, audit
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI):
     credentials()  # Fail startup for invalid, duplicate or under-length team credentials.
     initialize()
     initialize_operations()
+    initialize_google()
     recover_calls()
     initialize_queue()
     try:
@@ -72,6 +74,7 @@ app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173', 'http
 app.add_middleware(AccessMiddleware)
 app.include_router(auth_router)
 app.include_router(privacy_router)
+app.include_router(google_router)
 app.include_router(queue_router)
 app.include_router(operations_router)
 app.include_router(discovery_router)

@@ -1,0 +1,11 @@
+{
+    admin localhost:2019
+    auto_https disable_redirects
+}
+https://localhost {
+    bind 127.0.0.1
+    tls internal
+    reverse_proxy 127.0.0.1:8000
+    header X-Content-Type-Options nosniff
+    header Referrer-Policy no-referrer
+}
