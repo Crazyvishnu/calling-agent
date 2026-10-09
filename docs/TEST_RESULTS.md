@@ -6,8 +6,8 @@ Environment: Linux, Python 3.12, Node 24, Chromium, Asterisk 20.6, local CPU Oll
 
 | Check | Result | Evidence and scope |
 |---|---|---|
-| Full backend suite | **72 passed** | `python -m unittest discover -s tests -v`; includes private export/erasure, durable quota regression, authentication, consent/DNC, quota, queue lifecycle, review, notifications, media and relay tests |
-| Portable backend subset | **59 passed locally** | Same selected modules are run on the Windows CI runner; Unix relay/media tests are excluded there |
+| Full backend suite | **76 passed** | `python -m unittest discover -s tests -v`; includes private export/erasure, durable quota regression, authentication, consent/DNC, quota, queue lifecycle, review, notifications, media and relay tests |
+| Portable backend subset | **63 passed locally** | Same selected modules are run on the Windows CI runner; Unix relay/media tests are excluded there |
 | React production build | **Passed** | `npm run build`; bundled dashboard serves from FastAPI |
 | Browser application flow | **Passed** | Owner login → new fictional lead/session → approved queue/cancel → actual local LLM turn → explicit human review → structured SQLite record → pending notification → developer handoff |
 | Mobile layout | **Passed** | 390px viewport, no horizontal overflow or browser runtime errors in the tested flow |
@@ -38,7 +38,7 @@ Only fixed generic application prompts are cached in memory. Customer-derived re
 - Native Windows speech/PBX, Docker Desktop/WSL2, host softphone access and Windows NTFS permissions. Windows CI covers the portable core and frontend build only.
 - Licensed Indian PSTN trunk, commercial telecom eligibility, promotional calling/recording/privacy requirements and carrier spend limits.
 - Actual always-on host, HTTPS/domain, private storage/backup operations and deployment monitoring. GitHub publishes source and checks; it does not run the AI/PBX stack.
-- Multi-user roles, comprehensive/tamper-resistant audit, backup erasure/retention operations and production security review.
+- Account lifecycle/MFA, comprehensive/tamper-resistant audit, backup erasure/retention operations and production security review.
 - Google Places integration and its billing/retention permissions. OpenStreetMap discovery is implemented; Google Maps is not connected.
 
 Read [private queue setup](CALL_QUEUE.md), [operations](OPERATIONS.md), and [deployment gates](DEPLOYMENT.md). The completed deliverable is a tested self-hosted prototype, not a licensed commercial telecom service.
@@ -48,3 +48,5 @@ Windows CI exposed a backup file-handle leak: SQLite connection context managers
 Current privacy regression tests also verify isolated export, active-call erasure rejection, permanent reimport suppression and call quotas surviving transcript deletion. Historical voice measurements above were not repeated for this privacy-only change.
 
 This release also passed the packaged dashboard privacy flow in Chromium: owner login, fictional record creation, private JSON download, confirmed erasure, 390px mobile layout and no runtime errors. Microphone erasure blocking and logout revocation have automated regression coverage. The complete speech/PBX measurements remain from the previous voice release.
+
+Named owner/operator/viewer permission tests pass, covering owner-only consent grants, call approval/dispatch, private export/erasure, read-only viewer media rejection, account audit attribution, cookie CSRF, key rotation, role downgrade and invalid configuration.

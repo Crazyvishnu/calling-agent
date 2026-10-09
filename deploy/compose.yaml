@@ -6,6 +6,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
+      AKKI_TEAM_KEYS: ${AKKI_TEAM_KEYS:-}
       AKKI_ADMIN_KEY: ${AKKI_ADMIN_KEY:?Generate a private owner key before starting}
       AKKI_ALLOWED_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
       AGENT_DB_PATH: /app/backend/data/leads.sqlite3

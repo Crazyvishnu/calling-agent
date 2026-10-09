@@ -53,7 +53,7 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements-dev.txt
       - name: Verify portable backend (Unix relay excluded)
-        run: python -m unittest tests.test_api tests.test_lab tests.test_discovery tests.test_operations tests.test_queue tests.test_handoff tests.test_speech tests.test_privacy -v
+        run: python -m unittest tests.test_api tests.test_lab tests.test_discovery tests.test_operations tests.test_queue tests.test_handoff tests.test_speech tests.test_privacy tests.test_roles -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

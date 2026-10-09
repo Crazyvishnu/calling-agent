@@ -44,7 +44,7 @@ GitHub Actions runs the backend test suite, frontend production build and applic
 - Licensed Indian PSTN connectivity and real human transfer. The implemented approved private queue can call only test endpoint 1001; its quotas and developer follow-up handoff are documented in CALL_QUEUE.md.
 - Commercial telecom eligibility, current India-specific consent/promotional requirements and recording/privacy policy review.
 - Authenticated hosting with HTTPS, persistent backups, monitoring and operating-cost approval.
-- Multi-user roles, more complete audit logging, retention/erasure controls and security review.
+- Account lifecycle/MFA, tamper-resistant audit logging, backup retention/erasure operations and security review.
 - Google Places integration only after its terms, retention restrictions and billing are approved. OpenStreetMap discovery is available now.
 
 The software is a tested self-hosted prototype, not a completed commercial telephone service.

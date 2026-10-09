@@ -2,12 +2,12 @@
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
 from .privacy import router as privacy_router
-from .security import AccessMiddleware, router as auth_router
+from .security import AccessMiddleware, router as auth_router, credentials, require_owner
 from .operations import router as operations_router, initialize_operations, audit
 from .call_queue import router as queue_router, initialize_queue
 from .conversation import HELLO, respond
@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
         raise RuntimeError('Owner authentication is required for this deployment')
     if os.environ.get('AKKI_ADMIN_KEY') and len(os.environ['AKKI_ADMIN_KEY']) < 32:
         raise RuntimeError('AKKI_ADMIN_KEY must contain at least 32 characters')
+    credentials()  # Fail startup for invalid, duplicate or under-length team credentials.
     initialize()
     initialize_operations()
     recover_calls()
@@ -115,7 +116,9 @@ def list_leads(q: str = '', status: str = '', category: str = ''):
 
 
 @app.post('/api/leads', status_code=201)
-def create_lead(lead: LeadCreate):
+def create_lead(lead: LeadCreate, request: Request):
+    if lead.contact_allowed or lead.consent_source:
+        require_owner(request)
     if lead.contact_allowed and not lead.consent_source.strip():
         raise HTTPException(status_code=422, detail='A consent source is required to mark contact as allowed')
     data = lead.model_dump()
@@ -135,7 +138,9 @@ def lead_detail(lead_id: int):
 
 
 @app.patch('/api/leads/{lead_id}')
-def update_lead(lead_id: int, update: LeadUpdate):
+def update_lead(lead_id: int, update: LeadUpdate, request: Request):
+    if update.contact_allowed is True or update.consent_source is not None:
+        require_owner(request)
     with connect() as db:
         db.execute('BEGIN IMMEDIATE')
         old = lead_from_db(db, lead_id)

@@ -1,5 +1,7 @@
-"""Single-owner authentication. Configure a private key before exposing the app."""
+"""Named owner/operator/viewer access. Configure private keys before deployment."""
 import hashlib
+import json
+from contextvars import ContextVar
 import hmac
 import os
 import secrets
@@ -11,6 +13,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 router = APIRouter(prefix='/api/auth', tags=['Owner access'])
+audit_actor = ContextVar('akki_actor', default='local-owner')
 sessions = {}
 attempts = defaultdict(list)
 
@@ -20,22 +23,61 @@ def key():
 def origins():
     return {'http://localhost:5173', 'http://127.0.0.1:5173'} | {x.strip().rstrip('/') for x in os.environ.get('AKKI_ALLOWED_ORIGINS', '').split(',') if x.strip()}
 
-def authorized(scope):
+def credentials():
+    records = [{'name': 'owner', 'role': 'owner', 'key': key()}] if key() else []
+    raw = os.environ.get('AKKI_TEAM_KEYS', '{}') or '{}'
+    data = json.loads(raw)
+    if not isinstance(data, dict) or len(data) > 20:
+        raise ValueError('AKKI_TEAM_KEYS must be an object with at most 20 named accounts')
+    import re
+    used = {key()}
+    for name, account in data.items():
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{3,32}', name) or name == 'owner':
+            raise ValueError('Invalid team account name')
+        if not isinstance(account, dict) or set(account) != {'role', 'key'} or account['role'] not in ('operator', 'viewer'):
+            raise ValueError('Team accounts require exactly role (operator/viewer) and key')
+        secret = account['key']
+        if not isinstance(secret, str) or not 32 <= len(secret) <= 512 or secret in used:
+            raise ValueError('Team keys must be unique and 32 to 512 characters long')
+        if not key():
+            raise ValueError('Team accounts require the owner key')
+        used.add(secret)
+        records.append({'name': name, 'role': account['role'], 'key': secret})
+    return records
+
+
+def principal(scope):
     if not key():
-        return True
+        return {'name': 'local-owner', 'role': 'owner'}
     headers = dict(scope.get('headers', []))
-    bearer = headers.get(b'authorization', b'').decode(errors='replace')
-    if bearer.startswith('Bearer ') and hmac.compare_digest(bearer[7:].encode(), key().encode()):
-        return True
-    cookie = headers.get(b'cookie', b'').decode(errors='replace')
+    bearer = headers.get(b'authorization', b'')
+    accounts = credentials()
+    if bearer.startswith(b'Bearer '):
+        for account in accounts:
+            if hmac.compare_digest(bearer[7:], account['key'].encode()):
+                return {'name': account['name'], 'role': account['role'], 'bearer': True}
     from http.cookies import SimpleCookie, CookieError
     try:
-        parsed = SimpleCookie(cookie)
+        parsed = SimpleCookie(headers.get(b'cookie', b'').decode(errors='replace'))
         token = parsed.get('akki_session')
         record = sessions.get(hashlib.sha256(token.value.encode()).hexdigest()) if token else None
-        return bool(record and record[0] > time.time() and hmac.compare_digest(record[1], hashlib.sha256(key().encode()).hexdigest()))
+        if record and record[0] > time.time():
+            for account in accounts:
+                if hmac.compare_digest(record[1], hashlib.sha256(account['key'].encode()).hexdigest()):
+                    return {'name': account['name'], 'role': account['role']}
     except CookieError:
-        return False
+        pass
+    return None
+
+
+def authorized(scope):
+    return principal(scope) is not None
+
+
+def require_owner(request):
+    identity = principal(request.scope)
+    if not identity or identity['role'] != 'owner':
+        raise HTTPException(403, 'Only the owner can grant or change contact consent')
 
 class AccessMiddleware:
     def __init__(self, app):
@@ -47,14 +89,25 @@ class AccessMiddleware:
         path = scope.get('path', '')
         public = path in ('/api/health', '/api/auth/status', '/api/auth/login') or not (path.startswith('/api/') or path in ('/docs', '/redoc', '/openapi.json'))
         headers = dict(scope.get('headers', []))
-        denied = not public and not authorized(scope)
+        identity = principal(scope)
+        denied = not public and identity is None
         # Cookies cannot authorize cross-site writes. CLI/bridge bearer access is independent.
-        if key() and not public and scope['type'] == 'http' and scope['method'] not in ('GET', 'HEAD', 'OPTIONS') and not (headers.get(b'authorization', b'').startswith(b'Bearer ') and hmac.compare_digest(headers[b'authorization'][7:], key().encode())):
+        if key() and not public and scope['type'] == 'http' and scope['method'] not in ('GET', 'HEAD', 'OPTIONS') and not (identity and identity.get('bearer')):
             denied = denied or headers.get(b'x-akki-request') != b'1' or headers.get(b'origin', b'').decode(errors='replace') not in origins()
         if denied:
             if scope['type'] == 'websocket':
                 return await send({'type': 'websocket.close', 'code': 4401})
             return await JSONResponse({'detail': 'Owner login required, or request origin rejected'}, status_code=401)(scope, receive, send)
+        owner_only = (path.startswith('/api/privacy/leads/') or
+                      (path.startswith('/api/call-queue') and scope.get('method') == 'POST' and not path.endswith('/cancel')) or
+                      (path.startswith('/api/telephony/sessions/') and path.endswith('/connect')))
+        read_only = identity and identity['role'] == 'viewer' and (
+            scope['type'] == 'websocket' or scope.get('method') not in ('GET', 'HEAD', 'OPTIONS') and path != '/api/auth/logout')
+        if not public and identity and (read_only or owner_only and identity['role'] != 'owner'):
+            if scope['type'] == 'websocket':
+                return await send({'type': 'websocket.close', 'code': 4403})
+            return await JSONResponse({'detail': 'This action requires a higher access role'}, status_code=403)(scope, receive, send)
+        actor_token = audit_actor.set(identity['name'] if identity else 'anonymous')
         async def private_send(message):
             if message['type'] == 'http.response.start' and not public:
                 message = dict(message)
@@ -66,14 +119,18 @@ class AccessMiddleware:
                     # Route templates and status only: no contact identifiers, bodies or credentials.
                     audit('http-' + scope['method'].lower() + '-' + str(message['status']), scope['route'].path)
             await send(message)
-        await self.app(scope, receive, private_send)
+        try:
+            await self.app(scope, receive, private_send)
+        finally:
+            audit_actor.reset(actor_token)
 
 class Login(BaseModel):
     key: str = Field(min_length=1, max_length=512)
 
 @router.get('/status')
 def status(request: Request):
-    return {'enabled': bool(key()), 'authenticated': authorized(request.scope)}
+    identity = principal(request.scope)
+    return {'enabled': bool(key()), 'authenticated': identity is not None, 'role': identity['role'] if identity else None, 'account': identity['name'] if identity else None}
 
 @router.post('/login')
 def login(body: Login, request: Request, response: Response):
@@ -90,17 +147,18 @@ def login(body: Login, request: Request, response: Response):
     if len(attempts[ip]) >= 5:
         raise HTTPException(429, 'Too many login attempts; wait one minute.')
     attempts[ip].append(now)
-    if not hmac.compare_digest(body.key.encode(), key().encode()):
-        raise HTTPException(401, 'Invalid owner key')
+    account = next((item for item in credentials() if hmac.compare_digest(body.key.encode(), item['key'].encode())), None)
+    if not account:
+        raise HTTPException(401, 'Invalid access key')
     for token, record in list(sessions.items()):
         if record[0] <= now:
             sessions.pop(token, None)
     if len(sessions) >= 64:
         sessions.pop(next(iter(sessions)))
     token = secrets.token_urlsafe(32)
-    sessions[hashlib.sha256(token.encode()).hexdigest()] = (now + 8 * 3600, hashlib.sha256(key().encode()).hexdigest())
+    sessions[hashlib.sha256(token.encode()).hexdigest()] = (now + 8 * 3600, hashlib.sha256(account['key'].encode()).hexdigest())
     response.set_cookie('akki_session', token, max_age=8 * 3600, httponly=True, samesite='strict', secure=os.environ.get('AKKI_SECURE_COOKIES') == '1')
-    return {'authenticated': True}
+    return {'authenticated': True, 'role': account['role'], 'account': account['name']}
 
 @router.post('/logout')
 def logout(request: Request, response: Response):

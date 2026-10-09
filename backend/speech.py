@@ -14,7 +14,7 @@ from .speech_engine import engine
 from .vad import EnergyVAD
 
 router = APIRouter(prefix='/api/speech', tags=['Local speech lab'])
-from .security import origins, authorized
+from .security import origins, principal
 connections = set()  # Development server: use one Uvicorn worker.
 
 
@@ -83,7 +83,7 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
         return generation
 
     def check_access():
-        if not authorized(ws.scope):
+        if not (identity := principal(ws.scope)) or identity['role'] == 'viewer':
             raise HTTPException(401, 'Owner session expired; reconnect after login')
 
     async def run_turn(pcm, generation, cancelled):

@@ -65,7 +65,7 @@ def readiness():
             'secure_cookies': os.environ.get('AKKI_SECURE_COOKIES') == '1',
             'private_sip_enabled': os.environ.get('AKKI_SIP_LAB') == '1',
             'pstn_connected': False, 'automatic_retries': False,
-            'production_ready': False,
+            'production_ready': False, 'access_roles': ['owner','operator','viewer'],
             'remaining_checks': ['Human speech and latency acceptance', 'Hindi/Telugu voice models and testing',
                                  'Windows voice and WSL2 SIP testing', 'Always-on host, TLS and restore drills',
-                                 'Licensed PSTN access and commercial calling authorization', 'Multi-user roles']}
+                                 'Licensed PSTN access and commercial calling authorization', 'Account lifecycle and stronger production authentication']}

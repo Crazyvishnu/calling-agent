@@ -29,9 +29,13 @@ def initialize_operations():
             created_at TEXT NOT NULL DEFAULT (datetime('now')));
         ''')
 
+        if 'actor' not in {r['name'] for r in db.execute('PRAGMA table_info(audit_events)')}:
+            db.execute("ALTER TABLE audit_events ADD COLUMN actor TEXT NOT NULL DEFAULT 'legacy-owner'")
+
 def audit(action, resource):
     with connect() as db:
-        db.execute('INSERT INTO audit_events(action,resource) VALUES (?,?)', (action, resource))
+        from .security import audit_actor
+        db.execute('INSERT INTO audit_events(action,resource,actor) VALUES (?,?,?)', (action, resource, audit_actor.get()))
 
 class Followup(BaseModel):
     lead_id: int = Field(gt=0)

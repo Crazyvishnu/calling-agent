@@ -1,6 +1,6 @@
 # Owner access and CRM operations
 
-This is a single-owner local application, not a multi-tenant service. Use one Uvicorn worker: microphone locks, call locks and login sessions are process-local. Login sessions last eight hours and expire on restart. Roles, MFA, tamper-resistant audit storage and distributed queues are not implemented.
+This is a local single-workspace application with owner/operator/viewer access, not a multi-tenant service. Use one Uvicorn worker: microphone locks, call locks and login sessions are process-local. Login sessions last eight hours and expire on restart. MFA, tamper-resistant audit storage and distributed queues are not implemented.
 
 ## Owner key
 
@@ -55,4 +55,22 @@ A minimal lead tombstone, HMAC phone suppression, call-attempt ledger and audit 
 
 API: `GET /api/privacy/leads/{id}/export`, `POST /api/privacy/leads/{id}/erase` with `{"reviewed":true}`, and `GET /api/privacy/readiness`. Readiness reports current configuration and explicitly lists unverified production gates; a healthy database alone does not certify production readiness.
 
-Private API responses use `Cache-Control: no-store` and browser security headers. Cookie writes require the request marker and an allowed Origin even if an invalid Authorization header is present. Authenticated HTTP mutations now record route template, method and response status without request bodies or contact identifiers. This local audit is not tamper-resistant, does not identify separate team members and does not capture every WebSocket/media event. Multi-user roles remain pending.
+Private API responses use `Cache-Control: no-store` and browser security headers. Cookie writes require the request marker and an allowed Origin even if an invalid Authorization header is present. Authenticated HTTP mutations now record route template, method and response status without request bodies or contact identifiers. This local audit is not tamper-resistant, identifies named accounts but does not capture every WebSocket/media event. See team access below.
+
+## Team access
+
+`AKKI_ADMIN_KEY` retains full owner authority. Optionally set the private server environment variable `AKKI_TEAM_KEYS` to a JSON object of named accounts, each containing `role` and a unique random `key` of at least 32 characters. Example structure (replace these placeholders privately):
+
+```json
+{"reviewer":{"role":"viewer","key":"REPLACE_WITH_UNIQUE_RANDOM_VIEWER_KEY"},"staff":{"role":"operator","key":"REPLACE_WITH_UNIQUE_RANDOM_OPERATOR_KEY"}}
+```
+
+Use the dashboard's **Access key** field for any account. Never put this JSON in source files, frontend configuration or issue reports. Invalid roles, duplicate keys and weak/short keys fail backend startup. At most 20 named accounts are supported. This is a single CRM workspace: viewers can read CRM records, transcripts and reports; there is no per-business data isolation.
+
+| Role | Permissions |
+|---|---|
+| Owner | All operations, including recording consent, approving/dispatching private calls and private export/erasure |
+| Operator | Read CRM, edit requirements/notes, discover/import unapproved businesses, use approved local AI sessions, revoke consent, suppress numbers, manage follow-ups and stop/cancel calls |
+| Viewer | Read-only CRM/reports; no microphone/media sessions, mutations or privacy exports |
+
+Operators cannot grant or modify consent evidence, approve/dispatch queue jobs, connect private SIP calls or export/erase customer data. The backend enforces these boundaries even when an API client bypasses the dashboard. Audit events identify the named account. Removing/rotating a key invalidates its cookies; changing a role affects subsequent requests and browser voice checkpoints. Production configuration normally requires a controlled restart, which cancels calls and expires sessions. Keep one worker. Password accounts, self-service account management, MFA/SSO and tenant separation remain unimplemented.
