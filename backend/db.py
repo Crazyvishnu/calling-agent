@@ -134,3 +134,9 @@ def initialize():
         END;
         """)
         db.execute("UPDATE leads SET do_not_call=1,contact_allowed=0 WHERE akki_phone_key(phone)!='' AND akki_phone_key(phone) IN (SELECT akki_phone_key(phone) FROM leads WHERE do_not_call=1)")
+
+        for column, definition in (('handoff_requested','INTEGER NOT NULL DEFAULT 0'),('reviewed_revision','INTEGER')):
+            if column not in {r['name'] for r in db.execute('PRAGMA table_info(ai_sessions)')}:
+                db.execute(f'ALTER TABLE ai_sessions ADD COLUMN {column} {definition}')
+        if 'structured_requirements' not in {r['name'] for r in db.execute('PRAGMA table_info(leads)')}:
+            db.execute("ALTER TABLE leads ADD COLUMN structured_requirements TEXT NOT NULL DEFAULT '{}'")

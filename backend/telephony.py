@@ -61,6 +61,7 @@ def call_view(call_id: str):
 class BindRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     audio_processing_consent: StrictBool
+    outbound_private: StrictBool = False
 
 
 async def prepare(language):
@@ -91,9 +92,17 @@ async def bind(session_id: str, body: BindRequest):
         raise HTTPException(409, 'Only one private call may be reserved at a time.')
     call_id = str(uuid4())
     active[call_id] = {'bridge': None, 'task': None}
-    with connect() as db:
-        db.execute('INSERT INTO sip_calls (id, session_id, state, stage) VALUES (?, ?, ?, ?)',
-                   (call_id, session_id, 'preparing', 'warming-models'))
+    try:
+        with connect() as db:
+            from .call_queue import quota
+            from .lab import eligible
+            db.execute('BEGIN IMMEDIATE')
+            quota(db, eligible(db, snapshot['lead_id']))
+            db.execute('INSERT INTO sip_calls (id, session_id, state, stage) VALUES (?, ?, ?, ?)',
+                       (call_id, session_id, 'preparing', 'warming-models'))
+    except BaseException:
+        active.pop(call_id, None)
+        raise
     bridge = None
     turn_timings = []
 
@@ -134,9 +143,9 @@ async def bind(session_id: str, body: BindRequest):
             key = json.load(file)['bridge_key']
         opening = await prepare(snapshot['language'])
         await asyncio.to_thread(checked_session, session_id)  # Permission may change during warmup.
-        bridge = AudioSocketBridge(session_id, key, opening, emit)
+        bridge = AudioSocketBridge(session_id, key, opening, emit, outbound_private=body.outbound_private)
         await bridge.open()
-        update(call_id, state='waiting', stage='dial-1002')
+        update(call_id, state='waiting', stage='calling-private-1001' if body.outbound_private else 'dial-1002')
         active[call_id].update(bridge=bridge, task=asyncio.create_task(run()))
         return call_view(call_id)
     except BaseException as exc:

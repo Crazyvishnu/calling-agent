@@ -2,11 +2,11 @@
 
 A **local sales lead dashboard and conversation prototype** for a website-building business. The original starter includes a React dashboard, FastAPI REST API, SQLite storage, lead requirements, lead statuses, a do-not-call safeguard, and a **scripted voice-conversation simulator**.
 
-> **Honest status:** The scripted starter is preserved. A new **local Ollama conversation lab** adds context-aware text replies, persistent sessions, and validated requirements drafts for human review, with optional browser speech. A **local English microphone prototype** adds faster-whisper, Piper and interruption detection; a separate **private Asterisk SIP-to-SIP lab** passes two-way audio testing. A **private Linux AudioSocket media bridge** now connects SIP to the local AI engine. A **business discovery dashboard** searches OpenStreetMap and imports reviewed prospects with consent unverified. Owner authentication, callback reminders, reports, minimal audit history, private backup/retention commands and a disabled-by-default Telegram outbox are included. A non-root Docker package serves the dashboard and API together. There is **no Google Maps integration, PSTN connection or activated cloud hosting**. Telugu/Hindi model and voice quality remain experimental. No paid services are activated.
+> **Honest status:** The scripted starter is preserved. A new **local Ollama conversation lab** adds context-aware text replies, persistent sessions, and validated requirements drafts for human review, with optional browser speech. A **local English microphone prototype** adds faster-whisper, Piper and interruption detection; a separate **private Asterisk SIP-to-SIP lab** passes two-way audio testing. A **private Linux AudioSocket media bridge** now connects SIP to the local AI engine. A **business discovery dashboard** searches OpenStreetMap and imports reviewed prospects with consent unverified. Owner authentication, callback reminders, reports, minimal audit history, private backup/retention commands and a disabled-by-default Telegram outbox are included. An approved private outbound queue calls only consenting test endpoint 1001, enforces quotas, supports developer handoff, and saves reviewed structured requirements. A non-root Docker package serves the dashboard and API together. There is **no Google Maps integration, PSTN connection or activated cloud hosting**. Telugu/Hindi model and voice quality remain experimental. No paid services are activated.
 
-## Current milestone: owner access and self-hosting
+## Current milestone: private outbound queue and reviewed lead qualification
 
-Read [operations and owner access](docs/OPERATIONS.md) and [self-hosting setup and remaining gates](docs/DEPLOYMENT.md). Source publication on GitHub is separate from a running hosted application.
+Read [private outbound queue, quotas and developer handoff](docs/CALL_QUEUE.md) and [latest test results](docs/TEST_RESULTS.md). Read [operations and owner access](docs/OPERATIONS.md) and [self-hosting setup and remaining gates](docs/DEPLOYMENT.md). Source publication on GitHub is separate from a running hosted application.
 
 ## Business discovery
 
@@ -114,6 +114,7 @@ The backend supports **single-owner authentication** when `AKKI_ADMIN_KEY` is se
 - [x] Optional Telegram outbox with explicit worker command; actual bot delivery unverified
 - [x] Single-owner access, callback reminders, reports, minimal audit and backup/retention tools
 - [x] Tested Linux Docker dashboard/API package
+- [x] Approved private outbound SIP queue, contact/global quotas, human follow-up handoff and reviewed structured CRM requirements
 - [x] OpenStreetMap nearby search, website metadata filter, reviewed import and deduplication
 - [ ] Google Places adapter after terms/cost review
 

@@ -92,19 +92,25 @@ def notifications():
 def telegram_enabled():
     return os.environ.get('AKKI_TELEGRAM_ENABLED') == '1' and bool(os.environ.get('TELEGRAM_BOT_TOKEN') and os.environ.get('TELEGRAM_CHAT_ID'))
 
+def queue_notification_in_transaction(db, lead_id):
+    lead = db.execute('SELECT * FROM leads WHERE id=?', (lead_id,)).fetchone()
+    if not lead:
+        raise HTTPException(404, 'Lead not found')
+    if lead['do_not_call'] or lead['status'] not in ('interested', 'follow_up') or not lead['contact_allowed'] or not lead['consent_source'].strip():
+        raise HTTPException(403, 'Only consented qualified leads can be queued')
+    fingerprint = hashlib.sha256(json.dumps([lead_id, lead['requirements'], lead['budget'], lead['timeline'], lead['structured_requirements']], ensure_ascii=False).encode()).hexdigest()
+    db.execute('INSERT OR IGNORE INTO notifications(lead_id,fingerprint) VALUES (?,?)', (lead_id, fingerprint))
+    return dict(db.execute('SELECT id,state FROM notifications WHERE fingerprint=?', (fingerprint,)).fetchone())
+
+
 @router.post('/notifications/leads/{lead_id}', status_code=201)
 def queue_notification(lead_id: int):
     with connect() as db:
-        lead = db.execute('SELECT * FROM leads WHERE id=?', (lead_id,)).fetchone()
-        if not lead:
-            raise HTTPException(404, 'Lead not found')
-        if lead['do_not_call'] or lead['status'] not in ('interested', 'follow_up') or not lead['contact_allowed'] or not lead['consent_source'].strip():
-            raise HTTPException(403, 'Only consented qualified leads can be queued')
-        fingerprint = hashlib.sha256(json.dumps([lead_id, lead['requirements'], lead['budget'], lead['timeline']], ensure_ascii=False).encode()).hexdigest()
-        db.execute('INSERT OR IGNORE INTO notifications(lead_id,fingerprint) VALUES (?,?)', (lead_id, fingerprint))
-        result = dict(db.execute('SELECT id,state FROM notifications WHERE fingerprint=?', (fingerprint,)).fetchone())
+        db.execute('BEGIN IMMEDIATE')
+        result = queue_notification_in_transaction(db, lead_id)
     audit('notification-queued', str(lead_id))
     return result
+
 
 async def deliver_one():
     """Explicit worker command only; no sends during imports, startup or API reads."""

@@ -8,7 +8,8 @@ import time
 import wave
 from pathlib import Path
 
-from sip_smoke import Phone, invite, parse, response, one
+from sip_smoke import Phone, invite, parse, response, one, sdp
+import re
 
 
 def encode(pcm):
@@ -37,13 +38,28 @@ def main():
     parser.add_argument('--opt-out-pcm')
     parser.add_argument('--capture-test-wavs', action='store_true', help='Explicitly save synthetic received audio under container /tmp')
     parser.add_argument('--hangup-after-speech', action='store_true')
+    parser.add_argument('--outbound', action='store_true', help='Answer the approved private outbound call to 1001')
     parser.add_argument('--barge-in', action='store_true', help='Speak opt-out during the AI reply')
     args = parser.parse_args()
     credentials = json.loads(Path('/run/akki/credentials.json').read_text())
     phone = Phone('1001', credentials['1001'], 5062, 16002)
     assert phone.register().startswith('SIP/2.0 200')
-    code, remote, _ = invite(phone, '1002')
-    assert code == 200
+    if args.outbound:
+        print('private-endpoint-registered', flush=True)
+        phone.sock.settimeout(120)
+        request, addr = phone.sock.recvfrom(65535)
+        line, headers, content = parse(request)
+        assert line.startswith('INVITE '), 'Expected private outbound INVITE'
+        remote = int(re.search(r'm=audio (\d+)', content)[1])
+        phone.call_id = one(headers, 'call-id')
+        phone.to = one(headers, 'from')
+        phone.tag = 'recipient'
+        phone.remote_uri = one(headers, 'contact').strip('<>')
+        phone.sock.sendto(response(request, 100, 'Trying'), addr)
+        phone.sock.sendto(response(request, 200, 'OK', phone.contact, sdp(phone.rtp.getsockname()[1])), addr)
+    else:
+        code, remote, _ = invite(phone, '1002')
+        assert code == 200
     speech = encode(Path(args.speech_pcm).read_bytes())
     decline = encode(Path(args.opt_out_pcm).read_bytes()) if args.opt_out_pcm else b''
     phase = 'opening'; offset = seq = 0; last_audio = started = time.monotonic()

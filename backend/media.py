@@ -62,12 +62,13 @@ async def read_packet(reader):
 
 class AudioSocketBridge:
     """Relay narrowband SIP audio into the existing consent-checked local voice WS."""
-    def __init__(self, session_id, key, opening, emit, relay_path=None, api_port=8000):
+    def __init__(self, session_id, key, opening, emit, relay_path=None, api_port=8000, outbound_private=False):
         self.session_id, self.key, self.opening, self.emit = session_id, key, opening, emit
         import os
         from pathlib import Path
         self.relay_path = relay_path or os.environ.get('AKKI_SIP_RELAY_PATH', str(Path(__file__).resolve().parents[1] / 'telephony/runtime/ipc/audio.sock'))
         self.api_port = api_port
+        self.outbound_private = outbound_private
         self.reader = self.writer = self.ws = self.player = None
         self.closed = False
         self.connected = False
@@ -87,7 +88,7 @@ class AudioSocketBridge:
             raise ValueError(hello.get('detail', 'Voice session rejected.'))
         self.generation = hello['generation']
         self.reader, self.writer = await asyncio.wait_for(asyncio.open_unix_connection(self.relay_path), 5)
-        self.writer.write((json.dumps({'session': self.session_id, 'key': self.key}) + '\n').encode())
+        self.writer.write((json.dumps({'session': self.session_id, 'key': self.key, 'outbound_private': self.outbound_private}) + '\n').encode())
         await self.writer.drain()
         self.key = None
         reply = json.loads(await asyncio.wait_for(self.reader.readline(), 5))

@@ -9,6 +9,13 @@ import wave
 
 from .ai import ProviderUnavailable
 
+# Cache only generic application prompts, never customer-derived replies.
+STATIC_PROMPTS = frozenset({
+    "Hello, I'm Akki, an AI assistant for a website service. You agreed to this private test and local transcript storage. What website do you need?",
+    'Understood. I have ended this conversation and disabled further outreach. Thank you.',
+    'I have noted your request for a person. The developer can review your details for a personal follow-up. Thank you.',
+})
+
 MODEL_ROOT = Path(__file__).parent / 'models'
 
 
@@ -18,6 +25,7 @@ class LocalSpeechEngine:
         self.stt_languages = os.environ.get('STT_LANGUAGES', 'en').split(',')
         self._recognizer = None
         self._voices = {}
+        self._static_audio = {}
         self._stt_lock, self._tts_lock = Lock(), Lock()
 
     def voice_path(self, language):
@@ -74,6 +82,9 @@ class LocalSpeechEngine:
             from piper.config import PiperConfig
             import onnxruntime
             with self._tts_lock:
+                cache_key = (language, text)
+                if text in STATIC_PROMPTS and cache_key in self._static_audio:
+                    return self._static_audio[cache_key]
                 if language not in self._voices:
                     path = self.voice_path(language)
                     options = onnxruntime.SessionOptions()
@@ -87,7 +98,10 @@ class LocalSpeechEngine:
                 output = io.BytesIO()
                 with wave.open(output, 'wb') as wav:
                     self._voices[language].synthesize_wav(text, wav)
-            return output.getvalue()
+                result = output.getvalue()
+                if text in STATIC_PROMPTS:
+                    self._static_audio[cache_key] = result
+            return result
         except (ImportError, RuntimeError, OSError, ValueError) as exc:
             raise ProviderUnavailable('Local Piper synthesis failed; check the voice files and optional dependencies.') from exc
 

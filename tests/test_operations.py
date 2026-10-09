@@ -105,7 +105,10 @@ class OperationsTests(unittest.TestCase):
             connection.execute("INSERT INTO conversations(lead_id,role,message,created_at) VALUES (?,'customer','private','2020-01-01')", (lead,))
         destination = Path(self.temp.name) / 'private-backup.sqlite3'
         backup(destination)
-        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        if os.name == 'posix':
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        else:
+            self.assertTrue(destination.is_file())  # Windows ACLs require separate verification.
         with self.assertRaises(ValueError): backup(destination)
         purge(30)
         with db.connect() as connection:

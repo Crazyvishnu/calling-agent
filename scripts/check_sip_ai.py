@@ -1,5 +1,6 @@
 """Explicit synthetic end-to-end SIP/AI check. Local Linux Docker only, no PSTN."""
 import argparse
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -7,6 +8,8 @@ import sys
 import time
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.media import wav_to_pcm8
 from backend.speech_engine import engine
@@ -19,6 +22,7 @@ COMPOSE = DOCKER + ['compose', '-f', str(ROOT / 'telephony/compose.yaml')]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-private-test', action='store_true')
+    parser.add_argument('--outbound', action='store_true')
     parser.add_argument('--barge-in', action='store_true')
     parser.add_argument('--hangup-during-inference', action='store_true')
     args = parser.parse_args()
@@ -32,7 +36,9 @@ def main():
         raise SystemExit('Install the optional local speech dependencies/models first.')
     names = []
     call = None
-    with httpx.Client(base_url='http://127.0.0.1:8000', trust_env=False, timeout=120) as client:
+    process = None
+    headers = {'Authorization': 'Bearer ' + os.environ['AKKI_ADMIN_KEY']} if os.environ.get('AKKI_ADMIN_KEY') else {}
+    with httpx.Client(headers=headers, base_url='http://127.0.0.1:8000', trust_env=False, timeout=120) as client:
         try:
             for name, text in [('speech', 'I need a restaurant website with a menu. My budget is twelve thousand rupees.'),
                                ('decline', 'Please do not call me again.')]:
@@ -45,17 +51,29 @@ def main():
             response.raise_for_status(); lead = response.json()
             response = client.post('/api/lab/sessions', json={'lead_id': lead['id'], 'collection_consent': True})
             response.raise_for_status(); session = response.json()
-            response = client.post(f'/api/telephony/sessions/{session["id"]}/connect', json={'audio_processing_consent': True})
-            response.raise_for_status(); call = response.json()
             command = COMPOSE + ['exec', '-T', 'asterisk', 'python3', '/opt/akki/ai_sip_smoke.py', '--speech-pcm', names[0]]
             if args.hangup_during_inference:
                 command += ['--hangup-after-speech']
             else:
                 command += ['--opt-out-pcm', names[1]]
                 if args.barge_in: command += ['--barge-in']
-            print('Reserved fictional session; running private SIP caller…', flush=True)
+            if args.outbound:
+                command += ['--outbound']
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                assert process.stdout.readline().strip() == 'private-endpoint-registered', 'Test recipient did not register'
+                from datetime import datetime, timezone
+                response = client.post('/api/call-queue', json={'session_id': session['id'], 'due_at': datetime.now(timezone.utc).isoformat(),
+                    'approval_source':'Consenting synthetic outbound SIP test', 'private_test_approved':True, 'audio_processing_consent':True})
+                response.raise_for_status(); job = response.json()
+                response = client.post(f'/api/call-queue/{job["id"]}/dispatch'); response.raise_for_status(); job = response.json()
+                assert job['call_id'], 'Outbound job did not dispatch'
+                call = client.get(f'/api/telephony/calls/{job["call_id"]}').json()
+            else:
+                response = client.post(f'/api/telephony/sessions/{session["id"]}/connect', json={'audio_processing_consent': True})
+                response.raise_for_status(); call = response.json()
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            print('Running consenting synthetic private SIP exchange…', flush=True)
             stages = []
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             deadline = time.monotonic() + 120
             while process.poll() is None:
                 if time.monotonic() > deadline:
@@ -85,6 +103,8 @@ def main():
                 'saved_revision': call['session']['revision'], 'pstn_connected': False}, indent=2))
             print('Synthetic English speech only; human review, accents and real-user quality remain unverified.')
         finally:
+            if process and process.poll() is None:
+                process.kill(); process.communicate()
             if call:
                 client.post(f'/api/telephony/calls/{call["id"]}/stop')
             if names:

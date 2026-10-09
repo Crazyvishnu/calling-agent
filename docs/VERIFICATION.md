@@ -160,3 +160,8 @@ the suite passed. Dependency pinning should be addressed in stabilization work.
 ## Final feature scope
 
 See [deployment gates](DEPLOYMENT.md) for what remains. The project is a self-hosted prototype with a private SIP media bridge, not a finished commercial calling platform. Current media latency still needs improvement. The initial base Docker package hosts CRM/API only; separately installed host models and PBX are documented and are not bundled in that image.
+
+
+## Private outbound queue and reviewed CRM milestone
+
+See [latest test report](TEST_RESULTS.md) for 67 backend tests, actual approved outbound SIP, interruption/hangup evidence, measured latency, browser flow and remaining production gates. [Private queue setup](CALL_QUEUE.md) supersedes the earlier inbound-only scope.

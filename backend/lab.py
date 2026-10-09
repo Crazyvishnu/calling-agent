@@ -1,5 +1,6 @@
 """Durable local text conversation lab, ready for a future speech transport."""
 import json
+import re
 from typing import Literal
 from uuid import uuid4
 
@@ -106,6 +107,8 @@ def load_turn(session_id: str, revision: int, generation=None):
         eligible(db, session['lead_id'])
         if session['state'] != 'active' or session['revision'] != revision:
             raise HTTPException(409, 'Session ended or changed. Reload it before continuing.')
+        if generation is None and db.execute("SELECT 1 FROM sip_calls WHERE session_id=? AND state IN ('preparing','waiting','connected')", (session_id,)).fetchone():
+            raise HTTPException(409, 'Private SIP owns this session; typed turns are disabled during the call')
         if generation is not None and session['voice_generation'] != generation:
             raise HTTPException(409, 'Voice turn interrupted; result discarded.')
         return dict(session), view(db, session_id)['messages'], json.loads(session['draft_json'])
@@ -119,6 +122,9 @@ def generate_turn(snapshot, messages, draft, body, provider):
         # Opt-out is processed without waiting for a model, even if Ollama is offline.
         answer = 'Understood. I have ended this conversation and disabled further outreach. Thank you.'
         state, interest = 'declined', 'not_interested'
+    elif human_requested(body.message):
+        answer = 'I have noted your request for a person. The developer can review your details for a personal follow-up. Thank you.'
+        state = 'completed'
     else:
         try:
             turn = provider.reply(messages + [{'role': 'customer', 'message': body.message}], snapshot['language'], draft)
@@ -146,12 +152,17 @@ def commit_turn(session_id, body, candidate, generation=None):
     with connect() as db:
         db.execute('BEGIN IMMEDIATE')
         current = session_row(db, session_id)
+        if generation is None and db.execute("SELECT 1 FROM sip_calls WHERE session_id=? AND state IN ('preparing','waiting','connected')", (session_id,)).fetchone():
+            raise HTTPException(409, 'Private SIP acquired this session while the model was replying')
         if generation is not None and current['voice_generation'] != generation:
             raise HTTPException(409, 'Voice turn interrupted; result discarded.')
         # Model inference happens outside the DB lock. Recheck consent and revision at commit.
         eligible(db, current['lead_id'])
         if current['state'] != 'active' or current['revision'] != body.revision:
             raise HTTPException(409, 'Session ended or changed while the model was replying. Reload it.')
+        if not changes and human_requested(body.message):
+            db.execute('UPDATE ai_sessions SET handoff_requested=1 WHERE id=?', (session_id,))
+            db.execute("UPDATE leads SET status='follow_up',updated_at=datetime('now') WHERE id=?", (current['lead_id'],))
         db.executemany('INSERT INTO ai_messages (session_id, role, message) VALUES (?, ?, ?)',
                        [(session_id, 'customer', body.message), (session_id, 'agent', answer)])
         db.execute("UPDATE ai_sessions SET draft_json=?, interest=?, state=?, revision=revision+1, updated_at=datetime('now') WHERE id=?",
@@ -184,3 +195,65 @@ def delete(session_id: str):
     with connect() as db:
         session_row(db, session_id)
         db.execute('DELETE FROM ai_sessions WHERE id=?', (session_id,))
+
+
+
+def human_requested(message):
+    return bool(re.search(r"\b(?:speak|talk) (?:to|with) (?:a |the |your )?(?:human|person|developer|owner)\b|\b(?:human agent|human callback)\b", message, re.I))
+
+
+class ReviewRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    revision: int = Field(ge=0)
+    reviewed: StrictBool
+
+
+@router.post('/sessions/{session_id}/review')
+def review(session_id: str, body: ReviewRequest):
+    from .operations import audit
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        session = session_row(db, session_id)
+        eligible(db, session['lead_id'])
+        if not body.reviewed:
+            raise HTTPException(422, 'Explicit human review is required')
+        if session['revision'] != body.revision:
+            raise HTTPException(409, 'Draft changed; review the latest revision')
+        if session['state'] == 'declined':
+            raise HTTPException(403, 'Declined sessions cannot be qualified')
+        if db.execute("SELECT 1 FROM sip_calls WHERE session_id=? AND state IN ('preparing','waiting','connected')", (session_id,)).fetchone():
+            raise HTTPException(409, 'End the private call before reviewing requirements')
+        from .ai import RequirementsDraft
+        draft = RequirementsDraft.model_validate(json.loads(session['draft_json'])).model_dump(exclude_none=True, exclude_defaults=True)
+        if not draft:
+            raise HTTPException(422, 'There are no stated requirements to review')
+        # Saving the same revision is idempotent and cannot create repeated alerts.
+        if session['reviewed_revision'] == body.revision:
+            return view(db, session_id)
+        requirements = draft.get('requirements') or ', '.join(draft.get('pages_and_features', []))
+        db.execute("UPDATE leads SET structured_requirements=?,requirements=?,budget=?,timeline=?,status='interested',updated_at=datetime('now') WHERE id=?",
+                   (json.dumps(draft, ensure_ascii=False), requirements, draft.get('budget', ''), draft.get('timeline', ''), session['lead_id']))
+        db.execute('UPDATE ai_sessions SET reviewed_revision=? WHERE id=?', (body.revision, session_id))
+        from .operations import queue_notification_in_transaction
+        queue_notification_in_transaction(db, session['lead_id'])
+        result = view(db, session_id)
+    audit('requirements-reviewed', session_id)
+    return result
+
+
+@router.post('/sessions/{session_id}/handoff')
+def handoff(session_id: str):
+    from .operations import audit
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        session = session_row(db, session_id)
+        eligible(db, session['lead_id'])
+        if session['state'] == 'declined':
+            raise HTTPException(403, 'Declined conversation cannot be reopened')
+        if db.execute("SELECT 1 FROM sip_calls WHERE session_id=? AND state IN ('preparing','waiting','connected')", (session_id,)).fetchone():
+            raise HTTPException(409, 'Disconnect the private call before owner handoff')
+        db.execute("UPDATE ai_sessions SET state='completed',handoff_requested=1,voice_generation=voice_generation+1,updated_at=datetime('now') WHERE id=?", (session_id,))
+        db.execute("UPDATE leads SET status='follow_up',updated_at=datetime('now') WHERE id=?", (session['lead_id'],))
+        result = view(db, session_id)
+    audit('human-followup-requested', session_id)
+    return result

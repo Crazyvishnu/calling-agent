@@ -16,6 +16,13 @@ def astdb(command, session=''):
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
 
 
+def originate_private(identity):
+    # Constant destination and context. The caller cannot supply a number or CLI text.
+    identity = UUID(str(identity))
+    subprocess.run(['asterisk', '-rx', f'channel originate PJSIP/1001 application AudioSocket {identity},127.0.0.1:9092'],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+
+
 async def copy(reader, writer):
     while data := await reader.read(4096):
         writer.write(data)
@@ -54,6 +61,8 @@ async def control(reader, writer):
             key = json.load(file)['bridge_key']
         if not isinstance(hello, dict) or not isinstance(hello.get('key'), str) or not hmac.compare_digest(hello['key'], key):
             return
+        if set(hello) - {'key', 'session', 'outbound_private'} or type(hello.get('outbound_private', False)) is not bool:
+            return
         identity = UUID(hello['session'])
         if binding is not None:
             writer.write(b'{"error":"Private lab already reserved"}\n'); await writer.drain(); return
@@ -61,6 +70,8 @@ async def control(reader, writer):
         binding = current
         await asyncio.to_thread(astdb, 'put', str(identity))
         writer.write(b'{"ready":true,"dial_extension":"1002"}\n'); await writer.drain()
+        if hello.get('outbound_private'):
+            await asyncio.to_thread(originate_private, identity)
         # Detect operator disconnection while waiting for the first call.
         probe = asyncio.create_task(reader.read(1)); tasks.append(probe)
         done, _ = await asyncio.wait([current['call'], probe], timeout=120, return_when=asyncio.FIRST_COMPLETED)

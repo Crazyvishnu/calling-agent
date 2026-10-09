@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .security import AccessMiddleware, router as auth_router
 from .operations import router as operations_router, initialize_operations, audit
+from .call_queue import router as queue_router, initialize_queue
 from .conversation import HELLO, respond
 from .db import connect, initialize
 from .lab import router as lab_router
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
     initialize()
     initialize_operations()
     recover_calls()
+    initialize_queue()
     try:
         yield
     finally:
@@ -67,6 +69,7 @@ app = FastAPI(title='Akki Voice Agent', version='0.1.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173', 'http://127.0.0.1:5173'], allow_methods=['*'], allow_headers=['*'])
 app.add_middleware(AccessMiddleware)
 app.include_router(auth_router)
+app.include_router(queue_router)
 app.include_router(operations_router)
 app.include_router(discovery_router)
 app.include_router(lab_router)

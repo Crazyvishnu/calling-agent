@@ -58,3 +58,17 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.005)
         self.assertIsNone(relay.binding)
         self.cli.assert_any_call('put',str(identity));self.cli.assert_any_call('del')
+
+    async def test_outbound_destination_is_constant_and_uuid_validated(self):
+        identity=uuid4()
+        with patch('telephony.audio_relay.subprocess.run') as command:
+            relay.originate_private(identity)
+            self.assertEqual(command.call_args.args[0],['asterisk','-rx',f'channel originate PJSIP/1001 application AudioSocket {identity},127.0.0.1:9092'])
+            command.reset_mock()
+            with self.assertRaises(ValueError): relay.originate_private('1001; arbitrary-command')
+            command.assert_not_called()
+    async def test_unrecognized_destination_cannot_reach_cli(self):
+        reader,writer=await asyncio.open_unix_connection(self.path);self.streams.append(writer)
+        writer.write((json.dumps({'key':'fictional-test-key','session':str(uuid4()),'destination':'919999999999','outbound_private':True})+'\n').encode());await writer.drain()
+        self.assertEqual(await asyncio.wait_for(reader.read(),1),b'')
+        self.cli.assert_not_called()
