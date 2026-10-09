@@ -19,12 +19,14 @@ def phone_key(phone):
 
 @contextmanager
 def connect():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     db = sqlite3.connect(str(DB_PATH), timeout=20)
-    db.row_factory = sqlite3.Row
-    db.create_function('akki_phone_key', 1, phone_key, deterministic=True)
-    db.execute('PRAGMA foreign_keys = ON')
     try:
+        if os.name == 'posix':
+            DB_PATH.chmod(0o600)
+        db.row_factory = sqlite3.Row
+        db.create_function('akki_phone_key', 1, phone_key, deterministic=True)
+        db.execute('PRAGMA foreign_keys = ON')
         yield db
         db.commit()
     finally:

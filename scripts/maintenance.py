@@ -1,5 +1,6 @@
 """Private SQLite backups and explicit transcript retention; preserves lead/DNC records."""
 import argparse
+from contextlib import closing
 import asyncio
 import os
 from pathlib import Path
@@ -19,7 +20,7 @@ def backup(destination):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     os.close(fd)
     try:
-        with connect() as source, sqlite3.connect(path) as target:
+        with connect() as source, closing(sqlite3.connect(path)) as target:
             source.backup(target)
     except BaseException:
         path.unlink(missing_ok=True)

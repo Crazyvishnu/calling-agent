@@ -42,3 +42,5 @@ Only fixed generic application prompts are cached in memory. Customer-derived re
 - Google Places integration and its billing/retention permissions. OpenStreetMap discovery is implemented; Google Maps is not connected.
 
 Read [private queue setup](CALL_QUEUE.md), [operations](OPERATIONS.md), and [deployment gates](DEPLOYMENT.md). The completed deliverable is a tested self-hosted prototype, not a licensed commercial telecom service.
+
+Windows CI exposed a backup file-handle leak: SQLite connection context managers commit/rollback but do not close the connection. The maintenance command now closes the destination explicitly. POSIX database files also use mode 0600; Windows ACL validation remains separate. Verify the corrected release run in Actions.

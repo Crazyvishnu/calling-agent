@@ -1,4 +1,6 @@
 import asyncio
+from contextlib import closing
+import sqlite3
 from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
@@ -107,9 +109,14 @@ class OperationsTests(unittest.TestCase):
         backup(destination)
         if os.name == 'posix':
             self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(db.DB_PATH.stat().st_mode & 0o777, 0o600)
         else:
             self.assertTrue(destination.is_file())  # Windows ACLs require separate verification.
         with self.assertRaises(ValueError): backup(destination)
+        with closing(sqlite3.connect(destination)) as restored:
+            self.assertEqual(restored.execute('SELECT do_not_call FROM leads WHERE id=?', (lead,)).fetchone()[0], 1)
+        # Windows refuses this rename if the backup writer is still open.
+        destination.rename(destination.with_name('verified-private-backup.sqlite3'))
         purge(30)
         with db.connect() as connection:
             self.assertEqual(connection.execute('SELECT count(*) FROM conversations').fetchone()[0], 0)
