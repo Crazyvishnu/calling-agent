@@ -54,6 +54,8 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/auth/login', headers=headers, json={'key': 'k' * 40}).status_code, 200)
         self.assertEqual(self.client.get('/api/leads').status_code, 200)
         self.assertEqual(self.client.post('/api/leads', json={'business_name': 'No CSRF header'}).status_code, 401)
+        self.assertEqual(self.client.post('/api/leads', headers={'Authorization': 'invalid'}, json={'business_name': 'Forged bypass'}).status_code, 401)
+        self.assertEqual(self.client.get('/api/privacy/readiness').status_code,200)
         self.assertEqual(self.client.post('/api/leads', headers=headers, json={'business_name': 'Safe'}).status_code, 201)
         self.assertEqual(self.client.post('/api/auth/logout', headers=headers).status_code, 200)
         self.assertEqual(self.client.get('/api/leads').status_code, 401)

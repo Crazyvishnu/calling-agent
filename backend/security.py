@@ -24,10 +24,10 @@ def authorized(scope):
     if not key():
         return True
     headers = dict(scope.get('headers', []))
-    bearer = headers.get(b'authorization', b'').decode()
-    if bearer.startswith('Bearer ') and hmac.compare_digest(bearer[7:], key()):
+    bearer = headers.get(b'authorization', b'').decode(errors='replace')
+    if bearer.startswith('Bearer ') and hmac.compare_digest(bearer[7:].encode(), key().encode()):
         return True
-    cookie = headers.get(b'cookie', b'').decode()
+    cookie = headers.get(b'cookie', b'').decode(errors='replace')
     from http.cookies import SimpleCookie, CookieError
     try:
         parsed = SimpleCookie(cookie)
@@ -49,13 +49,24 @@ class AccessMiddleware:
         headers = dict(scope.get('headers', []))
         denied = not public and not authorized(scope)
         # Cookies cannot authorize cross-site writes. CLI/bridge bearer access is independent.
-        if key() and not public and scope['type'] == 'http' and scope['method'] not in ('GET', 'HEAD', 'OPTIONS') and b'authorization' not in headers:
-            denied = denied or headers.get(b'x-akki-request') != b'1' or headers.get(b'origin', b'').decode() not in origins()
+        if key() and not public and scope['type'] == 'http' and scope['method'] not in ('GET', 'HEAD', 'OPTIONS') and not (headers.get(b'authorization', b'').startswith(b'Bearer ') and hmac.compare_digest(headers[b'authorization'][7:], key().encode())):
+            denied = denied or headers.get(b'x-akki-request') != b'1' or headers.get(b'origin', b'').decode(errors='replace') not in origins()
         if denied:
             if scope['type'] == 'websocket':
                 return await send({'type': 'websocket.close', 'code': 4401})
             return await JSONResponse({'detail': 'Owner login required, or request origin rejected'}, status_code=401)(scope, receive, send)
-        await self.app(scope, receive, send)
+        async def private_send(message):
+            if message['type'] == 'http.response.start' and not public:
+                message = dict(message)
+                message['headers'] = list(message.get('headers', [])) + [
+                    (b'cache-control', b'no-store'), (b'x-content-type-options', b'nosniff'),
+                    (b'referrer-policy', b'no-referrer'), (b'x-frame-options', b'DENY')]
+                if scope['method'] not in ('GET', 'HEAD', 'OPTIONS') and scope.get('route'):
+                    from .operations import audit
+                    # Route templates and status only: no contact identifiers, bodies or credentials.
+                    audit('http-' + scope['method'].lower() + '-' + str(message['status']), scope['route'].path)
+            await send(message)
+        await self.app(scope, receive, private_send)
 
 class Login(BaseModel):
     key: str = Field(min_length=1, max_length=512)
@@ -79,7 +90,7 @@ def login(body: Login, request: Request, response: Response):
     if len(attempts[ip]) >= 5:
         raise HTTPException(429, 'Too many login attempts; wait one minute.')
     attempts[ip].append(now)
-    if not hmac.compare_digest(body.key, key()):
+    if not hmac.compare_digest(body.key.encode(), key().encode()):
         raise HTTPException(401, 'Invalid owner key')
     for token, record in list(sessions.items()):
         if record[0] <= now:

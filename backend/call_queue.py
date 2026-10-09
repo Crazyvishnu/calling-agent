@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
-from .db import connect, phone_key
+from .db import connect
 from .lab import eligible, session_row
 
 router = APIRouter(prefix='/api/call-queue', tags=['Approved private SIP queue'])
@@ -31,13 +31,13 @@ def initialize_queue():
 def quota(db, lead):
     """Failed reservations also consume a slot, preventing repeat attempts."""
     maximum = max(1, min(10, int(os.environ.get('AKKI_PRIVATE_DAILY_LIMIT', '5'))))
-    count = db.execute("SELECT count(*) FROM sip_calls WHERE created_at>=datetime('now','-1 day')").fetchone()[0]
+    count = db.execute("SELECT count(*) FROM call_attempts WHERE created_at>=datetime('now','-1 day')").fetchone()[0]
     if count >= maximum:
         raise HTTPException(429, 'Private lab rolling 24-hour call quota reached')
-    number = phone_key(lead['phone'])
-    count = db.execute("""SELECT count(*) FROM sip_calls c JOIN ai_sessions s ON s.id=c.session_id
-      JOIN leads l ON l.id=s.lead_id WHERE c.created_at>=datetime('now','-1 day')
-      AND (s.lead_id=? OR (?!='' AND akki_phone_key(l.phone)=?))""", (lead['id'], number, number)).fetchone()[0]
+    number = db.execute('SELECT akki_phone_fingerprint(?)', (lead['phone'],)).fetchone()[0]
+    count = db.execute("""SELECT count(*) FROM call_attempts
+      WHERE created_at>=datetime('now','-1 day')
+      AND (lead_id=? OR (?!='' AND contact_hash=?))""", (lead['id'], number, number)).fetchone()[0]
     if count:
         raise HTTPException(429, 'This lead or phone already has a private call attempt in the last 24 hours')
 

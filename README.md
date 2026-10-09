@@ -126,3 +126,7 @@ No license has been chosen yet. Add an explicit license if you want other develo
 
 See [test results and measured limitations](docs/VERIFICATION.md). The local model is
 not fast/reliable enough for live calling yet. Optional model and telephony tests are separate from offline CI. Check the repository Actions page for the result at the published commit.
+
+### Privacy controls
+
+The **Follow-ups & reports** screen now includes private business-record export, explicitly confirmed application-data erasure and deployment readiness checks. Erasure preserves hashed phone suppression and a minimal independent call-attempt ledger, so deleting transcripts cannot reset outreach quotas. Active calls/microphones must be stopped first. Existing backups and exports require separate removal. See [operations and privacy setup](docs/OPERATIONS.md).

@@ -174,3 +174,19 @@ class VoiceSocketTests(unittest.TestCase):
             ws.send_json({'type': 'stop'})
         lead = self.client.get(f'/api/leads/{self.lead}').json()
         self.assertTrue(lead['do_not_call']); self.assertFalse(lead['contact_allowed'])
+
+    def test_microphone_blocks_erasure_and_logout_revokes_socket(self):
+        import os
+        with patch.dict(os.environ, {'AKKI_ADMIN_KEY':'k' * 40}):
+            headers={'origin':'http://localhost:5173','X-Akki-Request':'1'}
+            self.assertEqual(self.client.post('/api/auth/login',headers=headers,json={'key':'k' * 40}).status_code,200)
+            with self.socket() as ws:
+                self.handshake(ws)
+                self.assertEqual(self.client.post(f'/api/privacy/leads/{self.lead}/erase', headers=headers,json={'reviewed':True}).status_code,409)
+                self.assertEqual(self.client.post('/api/auth/logout',headers=headers).status_code,200)
+                ws.send_json({'type':'ping'})
+                error=ws.receive_json()
+                self.assertEqual(error['type'],'error')
+                self.assertIn('expired',error['detail'])
+            response=self.client.get(f'/api/lab/sessions/{self.session["id"]}',headers={'Authorization':'Bearer '+'k' * 40})
+            self.assertEqual(response.json()['revision'],0)

@@ -1,5 +1,8 @@
 """SQLite persistence for local development."""
 import os
+import hashlib
+import hmac
+import secrets
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -27,6 +30,13 @@ def connect():
         db.row_factory = sqlite3.Row
         db.create_function('akki_phone_key', 1, phone_key, deterministic=True)
         db.execute('PRAGMA foreign_keys = ON')
+        def fingerprint(phone):
+            number = phone_key(phone)
+            if not number:
+                return ''
+            salt = db.execute("SELECT value FROM app_settings WHERE name='phone_hmac_key'").fetchone()[0]
+            return hmac.new(bytes.fromhex(salt), number.encode(), hashlib.sha256).hexdigest()
+        db.create_function('akki_phone_fingerprint', 1, fingerprint)
         yield db
         db.commit()
     finally:
@@ -142,3 +152,37 @@ def initialize():
                 db.execute(f'ALTER TABLE ai_sessions ADD COLUMN {column} {definition}')
         if 'structured_requirements' not in {r['name'] for r in db.execute('PRAGMA table_info(leads)')}:
             db.execute("ALTER TABLE leads ADD COLUMN structured_requirements TEXT NOT NULL DEFAULT '{}'")
+
+        db.executescript("""
+        CREATE TABLE IF NOT EXISTS app_settings(name TEXT PRIMARY KEY,value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS phone_suppressions (
+          fingerprint TEXT PRIMARY KEY,created_at TEXT NOT NULL DEFAULT (datetime('now')));
+        CREATE TABLE IF NOT EXISTS call_attempts (
+          id TEXT PRIMARY KEY,lead_id INTEGER NOT NULL,contact_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_attempts_time ON call_attempts(created_at);
+        """)
+        db.execute("INSERT OR IGNORE INTO app_settings(name,value) VALUES ('phone_hmac_key',?)", (secrets.token_hex(32),))
+        db.executescript("""
+        CREATE TRIGGER IF NOT EXISTS remember_suppression_insert AFTER INSERT ON leads
+        WHEN NEW.do_not_call=1 AND akki_phone_key(NEW.phone)!=''
+        BEGIN INSERT OR IGNORE INTO phone_suppressions(fingerprint) VALUES (akki_phone_fingerprint(NEW.phone)); END;
+        CREATE TRIGGER IF NOT EXISTS remember_suppression_update AFTER UPDATE OF phone,do_not_call ON leads
+        WHEN NEW.do_not_call=1 AND akki_phone_key(NEW.phone)!=''
+        BEGIN INSERT OR IGNORE INTO phone_suppressions(fingerprint) VALUES (akki_phone_fingerprint(NEW.phone)); END;
+        CREATE TRIGGER IF NOT EXISTS enforce_saved_suppression_insert AFTER INSERT ON leads
+        WHEN EXISTS(SELECT 1 FROM phone_suppressions WHERE fingerprint=akki_phone_fingerprint(NEW.phone))
+        BEGIN UPDATE leads SET do_not_call=1,contact_allowed=0 WHERE id=NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS enforce_saved_suppression_update AFTER UPDATE OF phone,contact_allowed,do_not_call ON leads
+        WHEN EXISTS(SELECT 1 FROM phone_suppressions WHERE fingerprint=akki_phone_fingerprint(NEW.phone))
+          AND (NEW.do_not_call!=1 OR NEW.contact_allowed!=0)
+        BEGIN UPDATE leads SET do_not_call=1,contact_allowed=0 WHERE id=NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS remember_call_attempt AFTER INSERT ON sip_calls
+        BEGIN
+          INSERT OR IGNORE INTO call_attempts(id,lead_id,contact_hash,created_at)
+          SELECT NEW.id,s.lead_id,akki_phone_fingerprint(l.phone),NEW.created_at
+          FROM ai_sessions s JOIN leads l ON l.id=s.lead_id WHERE s.id=NEW.session_id;
+        END;
+        """)
+        db.execute("INSERT OR IGNORE INTO phone_suppressions(fingerprint) SELECT akki_phone_fingerprint(phone) FROM leads WHERE do_not_call=1 AND akki_phone_key(phone)!=''")
+        db.execute("INSERT OR IGNORE INTO call_attempts(id,lead_id,contact_hash,created_at) SELECT c.id,s.lead_id,akki_phone_fingerprint(l.phone),c.created_at FROM sip_calls c JOIN ai_sessions s ON s.id=c.session_id JOIN leads l ON l.id=s.lead_id")

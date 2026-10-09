@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+from .privacy import router as privacy_router
 from .security import AccessMiddleware, router as auth_router
 from .operations import router as operations_router, initialize_operations, audit
 from .call_queue import router as queue_router, initialize_queue
@@ -69,6 +70,7 @@ app = FastAPI(title='Akki Voice Agent', version='0.1.0', lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=['http://localhost:5173', 'http://127.0.0.1:5173'], allow_methods=['*'], allow_headers=['*'])
 app.add_middleware(AccessMiddleware)
 app.include_router(auth_router)
+app.include_router(privacy_router)
 app.include_router(queue_router)
 app.include_router(operations_router)
 app.include_router(discovery_router)

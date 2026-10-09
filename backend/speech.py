@@ -14,7 +14,7 @@ from .speech_engine import engine
 from .vad import EnergyVAD
 
 router = APIRouter(prefix='/api/speech', tags=['Local speech lab'])
-from .security import origins
+from .security import origins, authorized
 connections = set()  # Development server: use one Uvicorn worker.
 
 
@@ -82,10 +82,15 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
         await send({'type': 'interrupt', 'generation': generation})
         return generation
 
+    def check_access():
+        if not authorized(ws.scope):
+            raise HTTPException(401, 'Owner session expired; reconnect after login')
+
     async def run_turn(pcm, generation, cancelled):
         nonlocal active, active_cancel, pending, terminal
         started = time.perf_counter()
         try:
+            check_access()
             snapshot = await asyncio.to_thread(checked_session, session_id)
             await send({'type': 'state', 'state': 'recognizing'})
             text = await asyncio.to_thread(engine.transcribe, pcm, snapshot['language'])
@@ -104,6 +109,7 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
                                                 CancellableProvider(provider, cancelled))
             if cancelled.is_set():
                 return
+            check_access()
             await asyncio.to_thread(load_turn, session_id, body.revision, generation)
             llm_ms = round((time.perf_counter() - model_started) * 1000)
             # Suppression must survive TTS failures: commit opt-out before synthesis.
@@ -121,6 +127,7 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
                 wav = b''
             if cancelled.is_set():
                 return
+            check_access()
             if result is None:
                 result = await asyncio.to_thread(commit_turn, session_id, body, candidate, generation)
                 terminal = result['state'] != 'active'
@@ -159,6 +166,7 @@ async def voice_socket(ws: WebSocket, session_id: str, provider=Depends(get_prov
             packet = await asyncio.wait_for(ws.receive(), timeout=30)
             if packet['type'] == 'websocket.disconnect':
                 break
+            check_access()
             if not terminal and time.monotonic() - last_check > 1:
                 await asyncio.to_thread(checked_session, session_id)
                 last_check = time.monotonic()
