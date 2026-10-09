@@ -8,5 +8,13 @@ __pycache__/
 .env.*
 !.env.example
 backend/data/
+backend/models/
+telephony/runtime/
+*.wav
+*.pcm
+*.raw
 *.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
 .DS_Store

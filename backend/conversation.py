@@ -8,15 +8,27 @@ HELLO = (
 )
 
 
+def decline_changes(message: str) -> dict:
+    """Conservative prototype suppression. A model may additionally detect intent."""
+    lower = message.casefold().strip().rstrip('.!?।')
+    if any(word in lower for word in ('stop calling', 'do not call', "don't call", 'remove my number', 'unsubscribe',
+                                      'कॉल मत', 'फोन मत', 'కాల్ చేయవద్దు', 'ఫోన్ చేయవద్దు')) or lower in ('stop', 'opt out'):
+        return {'do_not_call': True, 'contact_allowed': False, 'status': 'not_interested'}
+    if lower in ('no', 'nope', 'नहीं', 'వద్దు') or any(word in lower for word in (
+            'not interested', 'no thanks', 'no thank you', "don't need", 'do not need',
+            'दिलचस्पी नहीं', 'ఆసక్తి లేదు')):
+        return {'status': 'not_interested', 'contact_allowed': False}
+    return {}
+
+
 def respond(message: str, lead: dict, customer_messages: list[str]) -> tuple[str, dict]:
     """Return next scripted response and extracted lead fields."""
     lower = message.lower().strip()
     changes: dict = {}
 
-    if any(word in lower for word in ('stop calling', 'do not call', "don't call", 'remove my number', 'unsubscribe')):
-        return "Understood. We will not contact you again. Thank you.", {'do_not_call': True, 'contact_allowed': False, 'status': 'not_interested'}
-    if any(word in lower for word in ('not interested', 'no thanks', 'no thank you', "don't need", 'do not need')):
-        return "Understood, thank you for your time. Have a good day!", {'status': 'not_interested'}
+    declined = decline_changes(message)
+    if declined:
+        return "Understood. We have disabled further outreach. Thank you for your time!", declined
 
     money = re.search(r'(?:₹|rs\.?\s*|inr\s*)([\d,]+)(?:\s*(?:to|-)\s*(?:₹|rs\.?\s*)?([\d,]+))?', lower)
     if money:
@@ -45,7 +57,7 @@ def respond(message: str, lead: dict, customer_messages: list[str]) -> tuple[str
     if any(term in lower for term in ('next week', 'next month', 'this week', 'urgent', 'asap', 'two weeks')):
         changes['timeline'] = next(term for term in ('asap', 'urgent', 'this week', 'next week', 'two weeks', 'next month') if term in lower)
 
-    if any(term in lower for term in ('yes', 'interested', 'need website', 'want website', 'new website', 'redesign')) or matched or money:
+    if re.search(r'\b(?:yes|interested|need website|want website|new website|redesign)\b', lower) or matched or money:
         changes['status'] = 'interested'
 
     count = len(customer_messages)

@@ -1,0 +1,29 @@
+services:
+  asterisk:
+    build: .
+    image: akki-asterisk-lab:local
+    ports:
+      - "127.0.0.1:5060:5060/udp"
+      - "127.0.0.1:10000-10019:10000-10019/udp"
+    volumes:
+      - ./runtime/conf:/etc/asterisk:ro
+      - ./runtime/credentials.json:/run/akki/credentials.json:ro
+      - ./sip_smoke.py:/opt/akki/sip_smoke.py:ro
+      - ./ai_sip_smoke.py:/opt/akki/ai_sip_smoke.py:ro
+      - ./audio_relay.py:/opt/akki/audio_relay.py:ro
+      - ./runtime/ipc:/run/akki/ipc
+      - ./start.sh:/opt/akki/start.sh:ro
+    command: ["sh", "/opt/akki/start.sh"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:uid=1000,gid=1000
+      - /run/asterisk:uid=1000,gid=1000
+      - /var/lib/asterisk:uid=1000,gid=1000
+      - /var/log/asterisk:uid=1000,gid=1000
+      - /var/spool/asterisk:uid=1000,gid=1000
+    networks: [private-lab]
+networks:
+  private-lab:
+    internal: true

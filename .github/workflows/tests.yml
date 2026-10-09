@@ -2,6 +2,8 @@ name: Tests
 on:
   push:
   pull_request:
+permissions:
+  contents: read
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -19,7 +21,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt
+      - run: docker build -f deploy/Dockerfile -t akki-app:test .
+      - name: Verify self-hosted dashboard and API
+        env:
+          AKKI_ADMIN_KEY: fictional-ci-only-owner-test-key-123456789
+        run: |
+          docker run -d --name akki-check --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges -e AKKI_ADMIN_KEY -e AKKI_ALLOWED_ORIGINS=http://127.0.0.1:8080 -p 127.0.0.1:8080:8000 -v akki-check-data:/app/backend/data akki-app:test
+          python scripts/container_smoke.py
+      - name: Container logs
+        if: failure()
+        run: docker logs akki-check

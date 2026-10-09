@@ -1,0 +1,27 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      AKKI_ADMIN_KEY: ${AKKI_ADMIN_KEY:?Generate a private owner key before starting}
+      AKKI_ALLOWED_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+      AGENT_DB_PATH: /app/backend/data/leads.sqlite3
+      AKKI_SIP_LAB: "0"
+    volumes:
+      - leads:/app/backend/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  leads:
