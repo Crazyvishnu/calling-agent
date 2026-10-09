@@ -79,7 +79,7 @@ Build the React app with `cd frontend && npm run build`. GitHub Actions runs bot
 
 1. Begin with a private, consenting **SIP-to-SIP Asterisk lab** as described in [Akki Telephony](docs/AKKI_TELEPHONY.md). For later PSTN access, select a licensed SIP trunk or provider subject to India-specific eligibility, KYC, and calling regulations; verify media-streaming support.
 2. Test with *your own phone or consenting test recipients only*. Verify whether both outbound dialing and two-way media streaming are included in the trial.
-3. Configure owner authentication and HTTPS. Add stronger rate limits, encryption, multi-user roles, complete audit logs and privacy policies before public deployment.
+3. Configure owner authentication and HTTPS. Add stronger rate limits, encryption, account lifecycle/MFA, complete audit logs and privacy policies before public deployment.
 4. Reduce latency further and evaluate the connected STT -> LLM -> TTS/Asterisk prototype with humans. Add audible AI disclosure, human transfer and appropriate consent management before customer-facing calls.
 5. Add a background job queue, per-number calling limits, do-not-call suppression, explicit commercial outreach permissions, and hard cost limits. Never automatically call businesses merely because their number appears on a map.
 6. When moving hosting into the cloud, use a persistent managed database instead of relying on an ephemeral free container's SQLite disk. Free tiers are quota-limited and do not guarantee 24/7 availability forever.
@@ -97,7 +97,7 @@ Build the React app with `cd frontend && npm run build`. GitHub Actions runs bot
 
 ## Security note
 
-The backend supports **single-owner authentication** when `AKKI_ADMIN_KEY` is set. When unset, it remains an unauthenticated localhost development mode. Configure a strong key, HTTPS and private network access before remote use; see the operations guide. Do not add real clients' personal information until you have an appropriate privacy/consent policy and access controls. For Indian promotional calling, check current TRAI/DoT rules and use authorized calling infrastructure. Google Places data is subject to Google Maps Platform policies and should not be bulk-exported to your own CRM without complying with them.
+The backend supports **owner/operator/viewer access** when `AKKI_ADMIN_KEY` is set, with optional named accounts in private `AKKI_TEAM_KEYS` configuration. When unset, it remains an unauthenticated localhost development mode. Configure a strong key, HTTPS and private network access before remote use; see the operations guide. Do not add real clients' personal information until you have an appropriate privacy/consent policy and access controls. For Indian promotional calling, check current TRAI/DoT rules and use authorized calling infrastructure. Google Places data is subject to Google Maps Platform policies and should not be bulk-exported to your own CRM without complying with them.
 
 ## Suggested project milestones
 
@@ -112,7 +112,7 @@ The backend supports **single-owner authentication** when `AKKI_ADMIN_KEY` is se
 - [ ] Compliant real telephony trial provider and consented test call
 - [ ] Authenticated cloud deployment and persistent cloud database
 - [x] Optional Telegram outbox with explicit worker command; actual bot delivery unverified
-- [x] Single-owner access, callback reminders, reports, minimal audit and backup/retention tools
+- [x] Owner/operator/viewer access, callback reminders, reports, account audit and backup/retention tools
 - [x] Tested Linux Docker dashboard/API package
 - [x] Approved private outbound SIP queue, contact/global quotas, human follow-up handoff and reviewed structured CRM requirements
 - [x] OpenStreetMap nearby search, website metadata filter, reviewed import and deduplication

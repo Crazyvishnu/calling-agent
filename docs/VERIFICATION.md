@@ -138,7 +138,7 @@ English alone was exercised. Human speech, noisy rooms, headset barge-in, Hindi/
 Windows/Docker Desktop, human softphones, public deployment and commercial telecom
 eligibility remain unverified. Energy detection is vulnerable to noise/echo, canceled
 STT/TTS kernels may finish in the background, and all generated drafts need human review.
-The API now supports single-owner authentication; production multi-user roles and complete security auditing remain absent. Use one Uvicorn worker for this lab.
+The API now supports named owner/operator/viewer permissions and account audit attribution. Account lifecycle/MFA, tamper-resistant auditing and a complete production security review remain incomplete. Use one Uvicorn worker for this lab.
 No provider account, paid service, carrier trunk, deployment or customer outreach was
 activated. Downloaded models, private credentials, audio and databases are excluded
 from the source archive. The software uses laptop compute and stops when it is off.
